@@ -202,16 +202,12 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const cleanUrl = url.trim();
     const args = ['-m', 'yt_dlp', '-j', '--no-playlist', '--no-check-certificates', '--geo-bypass'];
 
-    // Provide Node.js runtime for YouTube JavaScript n-challenge solving (using exact process.execPath)
-    if (process.execPath && fs.existsSync(process.execPath)) {
-      args.push('--js-runtimes', `node:${process.execPath}`);
-    } else {
-      args.push('--js-runtimes', 'node');
-    }
-
-    // CRITICAL: ONLY pass cookies for YouTube!
-    // NEVER pass YouTube cookies to Facebook, Instagram, or TikTok as it causes immediate rejection/corruption!
+    // Platform-specific extractor optimizations
     if (platform === 'youtube') {
+      // Use mweb client to bypass datacenter 429 rate-limiting on Render
+      args.push('--extractor-args', 'youtube:player_client=mweb,web');
+      args.push('--js-runtimes', 'deno,node');
+
       const cookiesPath = resolveCookiesPath();
       if (cookiesPath && fs.existsSync(cookiesPath)) {
         args.push('--cookies', cookiesPath);
@@ -311,8 +307,11 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       formats
     };
   } catch (err: any) {
-    const rawMsg = err.message || '';
+    const rawMsg = err.stderr || err.message || '';
     console.error(`[Extractor Error] [Platform: ${platform}] [URL: ${url}]:`, rawMsg);
+    if (rawMsg.includes("This video is unavailable")) {
+      throw new Error("This video is unavailable or has been removed from YouTube.");
+    }
     if (rawMsg.includes("Sign in to confirm you're not a bot")) {
       throw new Error("YouTube requires sign-in verification. Add cookies.txt or YOUTUBE_COOKIES to download YouTube videos.");
     }

@@ -37,6 +37,14 @@ export function detectPlatform(url: string): VideoMetadata['platform'] {
 export function parseFriendlyError(rawError: string, platform?: string): AppError {
   const text = (rawError || '').toLowerCase();
 
+  if (text.includes('this video is unavailable') || text.includes('video is unavailable') || text.includes('video unavailable') || text.includes('not found') || text.includes('does not exist') || text.includes('deleted') || text.includes('404')) {
+    return {
+      title: 'Video Not Found or Unavailable',
+      message: 'This video is unavailable or has been removed from YouTube by the creator.',
+      tip: 'Please ensure the video is public and viewable in an incognito window, then try again.'
+    };
+  }
+
   if (text.includes("sign in to confirm you're not a bot") || text.includes('bot protection') || text.includes('sign-in verification')) {
     return {
       title: 'YouTube Bot Verification Required',
@@ -50,14 +58,6 @@ export function parseFriendlyError(rawError: string, platform?: string): AppErro
       title: 'Private or Restricted Video',
       message: 'This media is private or restricted to followers only.',
       tip: 'Please make sure the link is from a public profile or public post.'
-    };
-  }
-
-  if (text.includes('not found') || text.includes('does not exist') || text.includes('deleted') || text.includes('404') || text.includes('unavailable')) {
-    return {
-      title: 'Video Not Found',
-      message: 'The requested video could not be found or has been removed by the creator.',
-      tip: 'Please double-check the URL in your browser and try again.'
     };
   }
 
