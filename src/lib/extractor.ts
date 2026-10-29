@@ -96,15 +96,21 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       args.push('--js-runtimes', 'node');
     }
 
-    // Auto-detect cookies.txt for YouTube authentication
+    // Auto-detect or restore cookies.txt from environment variable (for Railway / Cloud hosting)
     const cookiesPath = path.join(process.cwd(), 'cookies.txt');
+    if (process.env.YOUTUBE_COOKIES && !fs.existsSync(cookiesPath)) {
+      try {
+        fs.writeFileSync(cookiesPath, process.env.YOUTUBE_COOKIES, 'utf-8');
+      } catch (_) {}
+    }
     if (fs.existsSync(cookiesPath)) {
       args.push('--cookies', cookiesPath);
     }
 
     args.push(cleanUrl);
 
-    const { stdout } = await execFileAsync('python', args, {
+    const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
+    const { stdout } = await execFileAsync(pythonCmd, args, {
       maxBuffer: 30 * 1024 * 1024,
       timeout: 35000
     });
