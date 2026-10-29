@@ -8,14 +8,16 @@ FROM node:20-slim
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies: Python 3, FFmpeg, Curl, CA Certificates
+# Install system dependencies: Python 3, FFmpeg, Curl, Unzip, CA Certificates, and Deno JS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python-is-python3 \
     ffmpeg \
     curl \
+    unzip \
     ca-certificates \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install latest yt-dlp engine and EJS solver for YouTube challenges
@@ -43,4 +45,3 @@ EXPOSE 3000
 
 # Start Next.js server
 CMD ["npm", "start"]
-
