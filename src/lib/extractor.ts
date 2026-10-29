@@ -71,6 +71,11 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
  * Handles Render/Cloud newline escaping, surrounding quotes, and base64 encoding.
  */
 function resolveCookiesPath(): string | null {
+  // Check Render Secret Files directory first (/etc/secrets/cookies.txt)
+  const renderSecret = '/etc/secrets/cookies.txt';
+  if (fs.existsSync(renderSecret)) {
+    return renderSecret;
+  }
   const envCookies = process.env.YOUTUBE_COOKIES;
   if (envCookies) {
     let raw = envCookies.trim();
