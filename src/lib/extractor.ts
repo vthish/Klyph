@@ -67,94 +67,116 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
 }
 
 /**
- * Safely resolves cookies from YOUTUBE_COOKIES environment variable or Render Secret Files
- * Handles Render/Cloud newline escaping, surrounding quotes, and Base64 encoding.
+ * Robustly sanitizes raw cookie input (handles Base64, missing tabs, and noise)
+ * and writes a verified Netscape format cookie file.
+ */
+function sanitizeAndWriteCookies(rawInput: string): string | null {
+  if (!rawInput || !rawInput.trim()) return null;
+  let raw = rawInput.trim();
+
+  // Strip wrapping quotes
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    raw = raw.slice(1, -1).trim();
+  }
+
+  // Auto-detect and decode Base64 encoded string
+  try {
+    const cleaned = raw.replace(/\s+/g, '');
+    const decoded = Buffer.from(cleaned, 'base64').toString('utf-8');
+    if (decoded.includes('.youtube.com') || decoded.includes('Netscape HTTP Cookie File')) {
+      raw = decoded;
+    }
+  } catch (_) {}
+
+  // Restore escaped newlines (\n -> actual line break)
+  if (raw.includes('\\n')) {
+    raw = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
+  }
+
+  // Parse and reconstruct standard Netscape cookie format with true tabs
+  const rawLines = raw.split(/\r?\n/);
+  const validLines: string[] = [
+    '# Netscape HTTP Cookie File',
+    '# http://curl.haxx.se/rfc/cookie_spec.html',
+    '# This is a generated file! Do not edit.',
+    ''
+  ];
+
+  for (const line of rawLines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    // Filter strictly youtube.com cookies
+    if (!trimmed.includes('.youtube.com') && !trimmed.includes('youtube.com')) continue;
+
+    if (trimmed.includes('\t')) {
+      validLines.push(trimmed);
+    } else {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 7) {
+        const domain = parts[0];
+        const flag = parts[1];
+        const p = parts[2];
+        const secure = parts[3];
+        const expiry = parts[4];
+        const name = parts[5];
+        const value = parts.slice(6).join(' ');
+        validLines.push(`${domain}\t${flag}\t${p}\t${secure}\t${expiry}\t${name}\t${value}`);
+      }
+    }
+  }
+
+  const realCookies = validLines.filter(l => !l.startsWith('#') && l.trim());
+  if (realCookies.length === 0) {
+    return null;
+  }
+
+  const reconstructed = validLines.join('\n') + '\n';
+  const targetPath = process.platform === 'win32'
+    ? path.join(process.cwd(), 'klyph_cookies.txt')
+    : '/tmp/klyph_cookies.txt';
+
+  try {
+    fs.writeFileSync(targetPath, reconstructed, 'utf-8');
+    return targetPath;
+  } catch (err) {
+    console.error('Failed to write cookies file:', err);
+    return null;
+  }
+}
+
+/**
+ * Safely resolves cookies from Render Secret Files, YOUTUBE_COOKIES env, or local workspace
  */
 function resolveCookiesPath(): string | null {
   // 1. Check Render Secret Files directory first (/etc/secrets/cookies.txt)
   const renderSecret = '/etc/secrets/cookies.txt';
   if (fs.existsSync(renderSecret)) {
-    return renderSecret;
+    try {
+      const content = fs.readFileSync(renderSecret, 'utf-8');
+      const sanitized = sanitizeAndWriteCookies(content);
+      if (sanitized) return sanitized;
+    } catch (_) {}
   }
 
   // 2. Check YOUTUBE_COOKIES environment variable
   const envCookies = process.env.YOUTUBE_COOKIES;
   if (envCookies) {
-    let raw = envCookies.trim();
-
-    // Strip wrapping quotes if user pasted with quotes
-    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
-      raw = raw.slice(1, -1).trim();
-    }
-
-    // Auto-detect and decode Base64 encoded string
-    try {
-      const cleaned = raw.replace(/\s+/g, '');
-      const decoded = Buffer.from(cleaned, 'base64').toString('utf-8');
-      if (decoded.includes('.youtube.com') || decoded.includes('Netscape HTTP Cookie File')) {
-        raw = decoded;
-      }
-    } catch (_) {}
-
-    // Restore escaped newlines (\n -> actual line break)
-    if (raw.includes('\\n')) {
-      raw = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
-    }
-
-    // Parse and reconstruct standard Netscape cookie format with true tabs
-    const rawLines = raw.split(/\r?\n/);
-    const validLines: string[] = [
-      '# Netscape HTTP Cookie File',
-      '# http://curl.haxx.se/rfc/cookie_spec.html',
-      '# This is a generated file! Do not edit.',
-      ''
-    ];
-
-    for (const line of rawLines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      // Keep only youtube.com cookies to avoid domain mismatch/corruption
-      if (!trimmed.includes('.youtube.com') && !trimmed.includes('youtube.com')) continue;
-
-      if (trimmed.includes('\t')) {
-        validLines.push(trimmed);
-      } else {
-        const parts = trimmed.split(/\s+/);
-        if (parts.length >= 7) {
-          const domain = parts[0];
-          const flag = parts[1];
-          const p = parts[2];
-          const secure = parts[3];
-          const expiry = parts[4];
-          const name = parts[5];
-          const value = parts.slice(6).join(' ');
-          validLines.push(`${domain}\t${flag}\t${p}\t${secure}\t${expiry}\t${name}\t${value}`);
-        }
-      }
-    }
-
-    const reconstructed = validLines.join('\n') + '\n';
-
-    // Write to /tmp on Linux or cwd on Windows
-    const candidatePaths = [
-      process.platform === 'win32' ? null : '/tmp/klyph_cookies.txt',
-      path.join(process.cwd(), 'cookies.txt')
-    ].filter(Boolean) as string[];
-
-    for (const p of candidatePaths) {
-      try {
-        fs.writeFileSync(p, reconstructed, 'utf-8');
-        return p;
-      } catch (_) {}
-    }
+    const sanitized = sanitizeAndWriteCookies(envCookies);
+    if (sanitized) return sanitized;
   }
 
   // 3. Fallback to local cookies.txt in workspace
   const localFile = path.join(process.cwd(), 'cookies.txt');
   if (fs.existsSync(localFile)) {
+    try {
+      const content = fs.readFileSync(localFile, 'utf-8');
+      const sanitized = sanitizeAndWriteCookies(content);
+      if (sanitized) return sanitized;
+    } catch (_) {}
     return localFile;
   }
+
   return null;
 }
 
