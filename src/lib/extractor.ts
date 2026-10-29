@@ -204,9 +204,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
     // Platform-specific extractor optimizations
     if (platform === 'youtube') {
-      // Use mweb client to bypass datacenter 429 rate-limiting on Render
-      args.push('--extractor-args', 'youtube:player_client=mweb,web');
-      args.push('--js-runtimes', 'deno,node');
+      // Use web_embedded,web rotation to unlock 1080p, 720p HD and dedicated audio streams
+      args.push('--extractor-args', 'youtube:player_client=web_embedded,web');
+      args.push('--js-runtimes', 'node');
 
       const cookiesPath = resolveCookiesPath();
       if (cookiesPath && fs.existsSync(cookiesPath)) {
@@ -243,7 +243,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       else if (height >= 360) label = '360p Mobile';
       else label = `${height}p Video`;
 
-      if (!seenQualities.has(label) && height >= 180) {
+      if (!seenQualities.has(label) && height >= 144) {
         seenQualities.add(label);
         const bytes = f.filesize || f.filesize_approx;
         formats.push({
@@ -257,7 +257,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           isDirect: true
         });
       }
-      if (formats.length >= 4) break;
+      if (formats.length >= 5) break;
     }
 
     // Extract audio stream
@@ -270,11 +270,23 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       const audioBytes = bestAudio.filesize || bestAudio.filesize_approx;
       formats.push({
         id: bestAudio.format_id || 'best-audio',
-        quality: `Audio Only (${bestAudio.abr ? Math.round(bestAudio.abr) + 'kbps' : 'HQ'})`,
+        quality: `Audio Only (${bestAudio.abr ? Math.round(bestAudio.abr) + 'kbps' : 'HQ MP3'})`,
         ext: 'mp3',
         type: 'audio',
         url: bestAudio.url,
         filesize: audioBytes ? `${(audioBytes / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        isDirect: true
+      });
+    } else if (formats.length > 0) {
+      // Fallback: guarantee Audio Only (MP3) option even if dedicated DASH audio track is absent
+      const primaryStream = formats[0];
+      formats.push({
+        id: 'fallback-audio',
+        quality: 'Audio Only (MP3)',
+        ext: 'mp3',
+        type: 'audio',
+        url: primaryStream.url,
+        filesize: primaryStream.filesize,
         isDirect: true
       });
     }
