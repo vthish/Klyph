@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
       { 
         success: false, 
         error: friendly.message,
-        errorDetails: friendly
+        errorDetails: friendly,
+        debugError: rawError
       },
       { status: 400 }
     );
