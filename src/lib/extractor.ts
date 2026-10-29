@@ -75,7 +75,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     throw new Error('Unsupported platform. Please enter a valid YouTube, TikTok, Instagram, or Facebook URL.');
   }
 
-  // Handle TikTok directly via cloud engine (avoids ISP / country geo-blocks)
+  // Handle TikTok directly via cloud engine
   if (platform === 'tiktok') {
     try {
       return await extractTikTok(url);
@@ -88,6 +88,14 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const cleanUrl = url.trim();
     const args = ['-m', 'yt_dlp', '-j', '--no-playlist'];
 
+    // Provide Node.js runtime for YouTube JavaScript n-challenge solving
+    const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
+    if (fs.existsSync(nodePath)) {
+      args.push('--js-runtimes', `node:${nodePath}`);
+    } else {
+      args.push('--js-runtimes', 'node');
+    }
+
     // Auto-detect cookies.txt for YouTube authentication
     const cookiesPath = path.join(process.cwd(), 'cookies.txt');
     if (fs.existsSync(cookiesPath)) {
@@ -97,8 +105,8 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     args.push(cleanUrl);
 
     const { stdout } = await execFileAsync('python', args, {
-      maxBuffer: 25 * 1024 * 1024,
-      timeout: 30000
+      maxBuffer: 30 * 1024 * 1024,
+      timeout: 35000
     });
 
     const info = JSON.parse(stdout);
@@ -106,12 +114,13 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const formats: VideoFormat[] = [];
     const seenQualities = new Set<string>();
 
+    // Extract best video streams (including progressive, DASH, and m3u8_native for Shorts)
     const videoStreams = rawFormats
-      .filter((f: any) => f.vcodec !== 'none' && f.url && (f.protocol === 'https' || f.protocol === 'http'))
-      .sort((a: any, b: any) => (b.height || 0) - (a.height || 0));
+      .filter((f: any) => f.vcodec && f.vcodec !== 'none' && f.url)
+      .sort((a: any, b: any) => (b.height || b.width || 0) - (a.height || a.width || 0));
 
     for (const f of videoStreams) {
-      const height = f.height || 0;
+      const height = f.height || (f.width && f.width < 1080 ? f.width : 720);
       let label = `${height}p`;
       if (height >= 2160) label = '4K Ultra HD (2160p)';
       else if (height >= 1440) label = '2K Quad HD (1440p)';
@@ -121,7 +130,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       else if (height >= 360) label = '360p Mobile';
       else label = `${height}p Video`;
 
-      if (!seenQualities.has(label) && height >= 240) {
+      if (!seenQualities.has(label) && height >= 180) {
         seenQualities.add(label);
         const bytes = f.filesize || f.filesize_approx;
         formats.push({
@@ -138,8 +147,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       if (formats.length >= 4) break;
     }
 
+    // Extract audio stream
     const audioStreams = rawFormats
-      .filter((f: any) => f.vcodec === 'none' && f.acodec !== 'none' && f.url && (f.protocol === 'https' || f.protocol === 'http'))
+      .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url)
       .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
 
     if (audioStreams.length > 0) {
@@ -156,6 +166,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       });
     }
 
+    // Fallback if no specific video stream matched
     if (formats.length === 0 && info.url) {
       formats.push({
         id: 'direct-default',
