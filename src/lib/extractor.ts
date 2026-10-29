@@ -204,8 +204,6 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
     // Platform-specific extractor optimizations
     if (platform === 'youtube') {
-      // Use web_embedded,web rotation to unlock 1080p, 720p HD and dedicated audio streams
-      args.push('--extractor-args', 'youtube:player_client=web_embedded,web');
       args.push('--js-runtimes', 'node');
 
       const cookiesPath = resolveCookiesPath();
@@ -227,10 +225,23 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const formats: VideoFormat[] = [];
     const seenQualities = new Set<string>();
 
-    // Extract best video streams (including progressive, DASH, and m3u8_native for Shorts)
+    // Extract best video streams (prioritize direct https mp4 streams over m3u8 playlists)
     const videoStreams = rawFormats
       .filter((f: any) => f.vcodec && f.vcodec !== 'none' && f.url)
-      .sort((a: any, b: any) => (b.height || b.width || 0) - (a.height || a.width || 0));
+      .sort((a: any, b: any) => {
+        const aM3u8 = (a.protocol || '').includes('m3u8') ? 1 : 0;
+        const bM3u8 = (b.protocol || '').includes('m3u8') ? 1 : 0;
+        if (aM3u8 !== bM3u8) return aM3u8 - bM3u8;
+
+        const hA = a.height || a.width || 0;
+        const hB = b.height || b.width || 0;
+        if (hB !== hA) return hB - hA;
+
+        if (a.ext === 'mp4' && b.ext !== 'mp4') return -1;
+        if (b.ext === 'mp4' && a.ext !== 'mp4') return 1;
+
+        return (b.tbr || 0) - (a.tbr || 0);
+      });
 
     for (const f of videoStreams) {
       const height = f.height || (f.width && f.width < 1080 ? f.width : 720);
@@ -257,12 +268,12 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           isDirect: true
         });
       }
-      if (formats.length >= 5) break;
+      if (formats.length >= 7) break;
     }
 
-    // Extract audio stream
+    // Extract audio stream (excluding m3u8 playlists)
     const audioStreams = rawFormats
-      .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url)
+      .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url && !(f.protocol || '').includes('m3u8'))
       .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
 
     if (audioStreams.length > 0) {
