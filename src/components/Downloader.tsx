@@ -14,7 +14,7 @@ import {
   AlertCircle,
   Sparkles
 } from 'lucide-react';
-import { VideoMetadata, VideoFormat, detectPlatform } from '@/lib/extractor';
+import { VideoMetadata, VideoFormat, detectPlatform } from '@/lib/types';
 
 export default function Downloader() {
   const [url, setUrl] = useState('');
