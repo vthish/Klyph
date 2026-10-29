@@ -100,6 +100,19 @@ function resolveCookiesPath(): string | null {
       } catch (_) {}
     }
 
+    // Auto-repair missing tabs if dashboard converted tabs into spaces
+    const lines = raw.split(/\r?\n/);
+    raw = lines.map(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return line;
+      if (line.includes('\t')) return line;
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 7) {
+        return parts.slice(0, 6).join('\t') + '\t' + parts.slice(6).join(' ');
+      }
+      return line;
+    }).join('\n');
+
     // Write to /tmp on Linux or cwd on Windows
     const candidatePaths = [
       process.platform === 'win32' ? null : '/tmp/klyph_cookies.txt',
