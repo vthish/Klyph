@@ -1,14 +1,22 @@
 import React from 'react';
+import Link from 'next/link';
 
 export default function Footer() {
   return (
     <footer className="footer">
       <div className="container">
         <div className="footer-links">
-          <a href="#" className="footer-link">Terms of Service</a>
-          <a href="#" className="footer-link">Privacy Policy</a>
-          <a href="https://github.com/vthish/Klyph" target="_blank" rel="noopener noreferrer" className="footer-link">GitHub Repository</a>
-          <a href="#" className="footer-link">API Docs</a>
+          <Link href="/terms" className="footer-link">Terms of Service</Link>
+          <Link href="/privacy" className="footer-link">Privacy Policy</Link>
+          <a 
+            href="https://github.com/vthish/Klyph" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="footer-link"
+          >
+            GitHub Repository
+          </a>
+          <Link href="/docs" className="footer-link">API Docs</Link>
         </div>
         <p>© {new Date().getFullYear()} Klyph Media Downloader. Built with Next.js & Edge Streaming.</p>
         <p style={{ marginTop: '8px', fontSize: '11px', opacity: 0.6 }}>
