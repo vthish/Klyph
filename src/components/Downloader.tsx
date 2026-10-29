@@ -12,14 +12,15 @@ import {
   Video, 
   CheckCircle2, 
   AlertCircle,
-  Sparkles
+  Sparkles,
+  HelpCircle
 } from 'lucide-react';
-import { VideoMetadata, VideoFormat, detectPlatform } from '@/lib/types';
+import { VideoMetadata, VideoFormat, detectPlatform, AppError } from '@/lib/types';
 
 export default function Downloader() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
   const [data, setData] = useState<VideoMetadata | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -32,7 +33,7 @@ export default function Downloader() {
         setUrl(text.trim());
       }
     } catch (_) {
-      // Fallback if clipboard API restricted
+      // Clipboard access fallback
     }
   };
 
@@ -59,12 +60,22 @@ export default function Downloader() {
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.error || 'Failed to fetch media details.');
+        const errorData: AppError = json.errorDetails || {
+          title: 'Unable to Process Link',
+          message: json.error || 'Failed to fetch media details.',
+          tip: 'Please ensure the link is a public video and try again.'
+        };
+        setError(errorData);
+        return;
       }
 
       setData(json.data);
     } catch (err: any) {
-      setError(err.message || 'Something went wrong while processing this link.');
+      setError({
+        title: 'Connection Error',
+        message: 'Could not communicate with the downloader service.',
+        tip: 'Please check your internet connection and try again.'
+      });
     } finally {
       setLoading(false);
     }
@@ -178,11 +189,20 @@ export default function Downloader() {
         </div>
       </div>
 
-      {/* Error Message */}
+      {/* User-Friendly Error Card */}
       {error && (
         <div className="error-box">
-          <AlertCircle size={20} />
-          <span>{error}</span>
+          <AlertCircle className="error-icon" size={22} />
+          <div className="error-content">
+            <h4 className="error-title">{error.title}</h4>
+            <p className="error-message">{error.message}</p>
+            {error.tip && (
+              <div className="error-tip">
+                <HelpCircle size={14} />
+                <span>Tip: {error.tip}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
