@@ -45,6 +45,14 @@ export function parseFriendlyError(rawError: string, platform?: string): AppErro
     };
   }
 
+  if (text.includes('unavailable') || text.includes('not available') || text.includes('removed') || text.includes('deleted')) {
+    return {
+      title: 'Video Unavailable',
+      message: 'This video is unavailable or has been removed from YouTube.',
+      tip: 'The creator may have removed this video, set it to private, or it is restricted in your region.'
+    };
+  }
+
   if (text.includes("sign in to confirm you're not a bot") || text.includes('bot protection') || text.includes('sign-in verification')) {
     return {
       title: 'YouTube Bot Verification Required',
