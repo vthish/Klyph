@@ -1,5 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
 import { VideoFormat, VideoMetadata, detectPlatform } from './types';
 
 export * from './types';
@@ -7,7 +9,65 @@ export * from './types';
 const execFileAsync = promisify(execFile);
 
 /**
- * High-performance extraction using local yt-dlp engine
+ * Dedicated TikTok fetcher using TikWM (Bypasses regional geo-blocks & redirects)
+ */
+async function extractTikTok(url: string): Promise<VideoMetadata> {
+  const apiUrl = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(url);
+  const res = await fetch(apiUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+  });
+  const data = await res.json();
+  if (data && data.code === 0 && data.data) {
+    const d = data.data;
+    const formats: VideoFormat[] = [];
+    if (d.hdplay) {
+      formats.push({
+        id: 'tt-hd',
+        quality: '1080p HD (No Watermark)',
+        resolution: '1080p',
+        ext: 'mp4',
+        type: 'video',
+        url: d.hdplay,
+        filesize: d.hd_size ? `${(d.hd_size / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        isDirect: true
+      });
+    }
+    if (d.play) {
+      formats.push({
+        id: 'tt-sd',
+        quality: 'Watermark Free (Original)',
+        resolution: '720p',
+        ext: 'mp4',
+        type: 'video',
+        url: d.play,
+        filesize: d.size ? `${(d.size / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        isDirect: true
+      });
+    }
+    if (d.music) {
+      formats.push({
+        id: 'tt-audio',
+        quality: 'Audio Only (MP3)',
+        ext: 'mp3',
+        type: 'audio',
+        url: d.music,
+        isDirect: true
+      });
+    }
+    return {
+      platform: 'tiktok',
+      title: d.title || 'TikTok Video',
+      author: d.author?.nickname || d.author?.unique_id || 'TikTok Creator',
+      thumbnail: d.cover || d.origin_cover || '',
+      duration: d.duration ? `${Math.floor(d.duration / 60)}:${(d.duration % 60).toString().padStart(2, '0')}` : undefined,
+      formats
+    };
+  }
+  throw new Error(data?.msg || 'Could not fetch TikTok media');
+}
+
+/**
+ * Universal media extractor
  */
 export async function extractMedia(url: string): Promise<VideoMetadata> {
   const platform = detectPlatform(url);
@@ -15,10 +75,30 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     throw new Error('Unsupported platform. Please enter a valid YouTube, TikTok, Instagram, or Facebook URL.');
   }
 
+  // Handle TikTok directly via cloud engine (avoids ISP / country geo-blocks)
+  if (platform === 'tiktok') {
+    try {
+      return await extractTikTok(url);
+    } catch (_) {
+      // Fallback to yt-dlp below
+    }
+  }
+
   try {
-    const { stdout } = await execFileAsync('python', ['-m', 'yt_dlp', '-j', '--no-playlist', url.trim()], {
-      maxBuffer: 20 * 1024 * 1024,
-      timeout: 25000
+    const cleanUrl = url.trim();
+    const args = ['-m', 'yt_dlp', '-j', '--no-playlist'];
+
+    // Auto-detect cookies.txt for YouTube authentication
+    const cookiesPath = path.join(process.cwd(), 'cookies.txt');
+    if (fs.existsSync(cookiesPath)) {
+      args.push('--cookies', cookiesPath);
+    }
+
+    args.push(cleanUrl);
+
+    const { stdout } = await execFileAsync('python', args, {
+      maxBuffer: 25 * 1024 * 1024,
+      timeout: 30000
     });
 
     const info = JSON.parse(stdout);
@@ -26,7 +106,6 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const formats: VideoFormat[] = [];
     const seenQualities = new Set<string>();
 
-    // Extract best video streams
     const videoStreams = rawFormats
       .filter((f: any) => f.vcodec !== 'none' && f.url && (f.protocol === 'https' || f.protocol === 'http'))
       .sort((a: any, b: any) => (b.height || 0) - (a.height || 0));
@@ -59,7 +138,6 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       if (formats.length >= 4) break;
     }
 
-    // Extract best audio stream
     const audioStreams = rawFormats
       .filter((f: any) => f.vcodec === 'none' && f.acodec !== 'none' && f.url && (f.protocol === 'https' || f.protocol === 'http'))
       .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
@@ -105,6 +183,10 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       formats
     };
   } catch (err: any) {
-    throw new Error(`Could not resolve video stream. Please verify the URL: ${err.message || ''}`);
+    const rawMsg = err.message || '';
+    if (rawMsg.includes("Sign in to confirm you're not a bot")) {
+      throw new Error("YouTube requires sign-in verification. Add cookies.txt to project root to download YouTube videos.");
+    }
+    throw new Error(`Could not resolve video: ${rawMsg}`);
   }
 }
