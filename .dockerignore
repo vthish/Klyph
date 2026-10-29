@@ -4,4 +4,6 @@ node_modules
 .gitignore
 *.log
 cookies.txt
+*.webm
+*.mp4
 
