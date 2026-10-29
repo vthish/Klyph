@@ -316,22 +316,25 @@ print(data)`;
               background: 'rgba(255,255,255,0.02)', 
               border: '1px solid var(--border-subtle)', 
               borderRadius: '8px',
-              overflow: 'hidden'
+              overflowX: 'auto',
+              WebkitOverflowScrolling: 'touch'
             }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 700, fontSize: '12px', color: 'var(--text-sub)' }}>
-                <span>FIELD</span>
-                <span>TYPE</span>
-                <span>DESCRIPTION</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', fontSize: '13px' }}>
-                <code style={{ color: 'var(--accent-cyan)' }}>url</code>
-                <span style={{ color: 'var(--text-muted)' }}>string</span>
-                <span style={{ color: 'var(--text-main)' }}>The direct media stream URL returned by <code>/api/fetch</code>.</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', fontSize: '13px' }}>
-                <code style={{ color: 'var(--accent-cyan)' }}>filename</code>
-                <span style={{ color: 'var(--text-muted)' }}>string</span>
-                <span style={{ color: 'var(--text-main)' }}>Custom desired filename for the downloaded media (e.g. <code>MyVideo.mp4</code>).</span>
+              <div style={{ minWidth: '560px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 700, fontSize: '12px', color: 'var(--text-sub)' }}>
+                  <span>FIELD</span>
+                  <span>TYPE</span>
+                  <span>DESCRIPTION</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', fontSize: '13px' }}>
+                  <code style={{ color: 'var(--accent-cyan)' }}>url</code>
+                  <span style={{ color: 'var(--text-muted)' }}>string</span>
+                  <span style={{ color: 'var(--text-main)' }}>The direct media stream URL returned by <code>/api/fetch</code>.</span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '120px 100px 1fr', padding: '12px 16px', fontSize: '13px' }}>
+                  <code style={{ color: 'var(--accent-cyan)' }}>filename</code>
+                  <span style={{ color: 'var(--text-muted)' }}>string</span>
+                  <span style={{ color: 'var(--text-main)' }}>Custom desired filename for the downloaded media (e.g. <code>MyVideo.mp4</code>).</span>
+                </div>
               </div>
             </div>
           </div>
