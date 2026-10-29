@@ -1,19 +1,23 @@
 'use client';
 
 import React from 'react';
-import { DownloadCloud } from 'lucide-react';
+import Link from 'next/link';
 
 export default function Header() {
   return (
     <header className="header">
       <div className="container header-content">
-        <a href="#" className="logo-group">
-          <div className="logo-icon">
-            <DownloadCloud size={22} strokeWidth={2.5} />
+        <Link href="/" className="logo-group">
+          <div className="logo-icon" style={{ overflow: 'hidden', padding: '2px' }}>
+            <img 
+              src="/icon.svg" 
+              alt="Klyph Logo" 
+              style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+            />
           </div>
           <span className="logo-text">Klyph</span>
           <span className="logo-badge">PRO</span>
-        </a>
+        </Link>
 
         <div className="header-actions">
           <div className="status-indicator">
