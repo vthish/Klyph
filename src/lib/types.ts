@@ -41,7 +41,7 @@ export function parseFriendlyError(rawError: string, platform?: string): AppErro
     return {
       title: 'YouTube Bot Verification Required',
       message: 'YouTube is temporarily restricting automated requests for this video to verify human access.',
-      tip: 'You can bypass this by placing a cookies.txt file in the project root, or try another video.'
+      tip: 'Please configure valid YouTube cookies in Render settings (Secret Files cookies.txt or YOUTUBE_COOKIES).'
     };
   }
 

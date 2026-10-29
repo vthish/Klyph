@@ -67,15 +67,17 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
 }
 
 /**
- * Safely resolves cookies from YOUTUBE_COOKIES environment variable
- * Handles Render/Cloud newline escaping, surrounding quotes, and base64 encoding.
+ * Safely resolves cookies from YOUTUBE_COOKIES environment variable or Render Secret Files
+ * Handles Render/Cloud newline escaping, surrounding quotes, and Base64 encoding.
  */
 function resolveCookiesPath(): string | null {
-  // Check Render Secret Files directory first (/etc/secrets/cookies.txt)
+  // 1. Check Render Secret Files directory first (/etc/secrets/cookies.txt)
   const renderSecret = '/etc/secrets/cookies.txt';
   if (fs.existsSync(renderSecret)) {
     return renderSecret;
   }
+
+  // 2. Check YOUTUBE_COOKIES environment variable
   const envCookies = process.env.YOUTUBE_COOKIES;
   if (envCookies) {
     let raw = envCookies.trim();
@@ -85,33 +87,54 @@ function resolveCookiesPath(): string | null {
       raw = raw.slice(1, -1).trim();
     }
 
+    // Auto-detect and decode Base64 encoded string
+    try {
+      const cleaned = raw.replace(/\s+/g, '');
+      const decoded = Buffer.from(cleaned, 'base64').toString('utf-8');
+      if (decoded.includes('.youtube.com') || decoded.includes('Netscape HTTP Cookie File')) {
+        raw = decoded;
+      }
+    } catch (_) {}
+
     // Restore escaped newlines (\n -> actual line break)
-    if (raw.includes('\\n') && !raw.includes('\n')) {
+    if (raw.includes('\\n')) {
       raw = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
     }
 
-    // Auto-decode if user provided base64 encoded string
-    if (!raw.includes('\t') && !raw.includes('youtube.com')) {
-      try {
-        const decoded = Buffer.from(raw, 'base64').toString('utf-8');
-        if (decoded.includes('youtube.com') || decoded.includes('\t')) {
-          raw = decoded;
+    // Parse and reconstruct standard Netscape cookie format with true tabs
+    const rawLines = raw.split(/\r?\n/);
+    const validLines: string[] = [
+      '# Netscape HTTP Cookie File',
+      '# http://curl.haxx.se/rfc/cookie_spec.html',
+      '# This is a generated file! Do not edit.',
+      ''
+    ];
+
+    for (const line of rawLines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      // Keep only youtube.com cookies to avoid domain mismatch/corruption
+      if (!trimmed.includes('.youtube.com') && !trimmed.includes('youtube.com')) continue;
+
+      if (trimmed.includes('\t')) {
+        validLines.push(trimmed);
+      } else {
+        const parts = trimmed.split(/\s+/);
+        if (parts.length >= 7) {
+          const domain = parts[0];
+          const flag = parts[1];
+          const p = parts[2];
+          const secure = parts[3];
+          const expiry = parts[4];
+          const name = parts[5];
+          const value = parts.slice(6).join(' ');
+          validLines.push(`${domain}\t${flag}\t${p}\t${secure}\t${expiry}\t${name}\t${value}`);
         }
-      } catch (_) {}
+      }
     }
 
-    // Auto-repair missing tabs if dashboard converted tabs into spaces
-    const lines = raw.split(/\r?\n/);
-    raw = lines.map(line => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) return line;
-      if (line.includes('\t')) return line;
-      const parts = trimmed.split(/\s+/);
-      if (parts.length >= 7) {
-        return parts.slice(0, 6).join('\t') + '\t' + parts.slice(6).join(' ');
-      }
-      return line;
-    }).join('\n');
+    const reconstructed = validLines.join('\n') + '\n';
 
     // Write to /tmp on Linux or cwd on Windows
     const candidatePaths = [
@@ -121,12 +144,13 @@ function resolveCookiesPath(): string | null {
 
     for (const p of candidatePaths) {
       try {
-        fs.writeFileSync(p, raw, 'utf-8');
+        fs.writeFileSync(p, reconstructed, 'utf-8');
         return p;
       } catch (_) {}
     }
   }
 
+  // 3. Fallback to local cookies.txt in workspace
   const localFile = path.join(process.cwd(), 'cookies.txt');
   if (fs.existsSync(localFile)) {
     return localFile;
@@ -163,10 +187,13 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       args.push('--js-runtimes', 'node');
     }
 
-    // Auto-detect or restore cookies.txt from environment variable (for Render / Railway / Cloud hosting)
-    const cookiesPath = resolveCookiesPath();
-    if (cookiesPath && fs.existsSync(cookiesPath)) {
-      args.push('--cookies', cookiesPath);
+    // CRITICAL: ONLY pass cookies for YouTube!
+    // NEVER pass YouTube cookies to Facebook, Instagram, or TikTok as it causes immediate rejection/corruption!
+    if (platform === 'youtube') {
+      const cookiesPath = resolveCookiesPath();
+      if (cookiesPath && fs.existsSync(cookiesPath)) {
+        args.push('--cookies', cookiesPath);
+      }
     }
 
     args.push(cleanUrl);
@@ -263,8 +290,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     };
   } catch (err: any) {
     const rawMsg = err.message || '';
+    console.error(`[Extractor Error] [Platform: ${platform}] [URL: ${url}]:`, rawMsg);
     if (rawMsg.includes("Sign in to confirm you're not a bot")) {
-      throw new Error("YouTube requires sign-in verification. Add cookies.txt to project root to download YouTube videos.");
+      throw new Error("YouTube requires sign-in verification. Add cookies.txt or YOUTUBE_COOKIES to download YouTube videos.");
     }
     throw new Error(`Could not resolve video: ${rawMsg}`);
   }
