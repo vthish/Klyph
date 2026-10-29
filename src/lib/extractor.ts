@@ -9,6 +9,49 @@ export * from './types';
 const execFileAsync = promisify(execFile);
 
 /**
+ * Formats raw byte count into human-readable KB, MB, or GB string
+ */
+export function formatBytes(bytes?: number | null): string | undefined {
+  if (!bytes || bytes <= 0 || isNaN(bytes)) return undefined;
+
+  const KB = 1024;
+  const MB = 1024 * KB;
+  const GB = 1024 * MB;
+
+  if (bytes >= GB) {
+    return `${parseFloat((bytes / GB).toFixed(2))} GB`;
+  }
+  if (bytes >= MB) {
+    return `${(bytes / MB).toFixed(1)} MB`;
+  }
+  return `${Math.round(bytes / KB)} KB`;
+}
+
+/**
+ * Estimates video bytes based on resolution height and duration in seconds
+ */
+function estimateBytes(height: number, durationSeconds?: number): number | undefined {
+  if (!durationSeconds || durationSeconds <= 0) return undefined;
+  let bytesPerSec = 60 * 1024;
+  if (height >= 2160) bytesPerSec = 2200 * 1024;
+  else if (height >= 1440) bytesPerSec = 1100 * 1024;
+  else if (height >= 1080) bytesPerSec = 450 * 1024;
+  else if (height >= 720) bytesPerSec = 220 * 1024;
+  else if (height >= 480) bytesPerSec = 110 * 1024;
+  else if (height >= 360) bytesPerSec = 60 * 1024;
+  else bytesPerSec = 35 * 1024;
+  return Math.round(bytesPerSec * durationSeconds);
+}
+
+/**
+ * Estimates audio bytes based on duration in seconds and bitrate
+ */
+function estimateAudioBytes(durationSeconds?: number, abr: number = 128): number | undefined {
+  if (!durationSeconds || durationSeconds <= 0) return undefined;
+  return Math.round(((abr * 1000) / 8) * durationSeconds);
+}
+
+/**
  * Dedicated TikTok fetcher using TikWM (Bypasses regional geo-blocks & redirects)
  */
 async function extractTikTok(url: string): Promise<VideoMetadata> {
@@ -19,8 +62,11 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
   const data = await res.json();
   if (data && data.code === 0 && data.data) {
     const d = data.data;
+    const duration = typeof d.duration === 'number' ? d.duration : undefined;
     const formats: VideoFormat[] = [];
+
     if (d.hdplay) {
+      const hdBytes = d.hd_size || estimateBytes(1080, duration);
       formats.push({
         id: 'tt-hd',
         quality: '1080p HD (No Watermark)',
@@ -28,11 +74,12 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
         ext: 'mp4',
         type: 'video',
         url: d.hdplay,
-        filesize: d.hd_size ? `${(d.hd_size / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        filesize: formatBytes(hdBytes),
         isDirect: true
       });
     }
     if (d.play) {
+      const sdBytes = d.size || estimateBytes(720, duration);
       formats.push({
         id: 'tt-sd',
         quality: 'Watermark Free (Original)',
@@ -40,17 +87,19 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
         ext: 'mp4',
         type: 'video',
         url: d.play,
-        filesize: d.size ? `${(d.size / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        filesize: formatBytes(sdBytes),
         isDirect: true
       });
     }
     if (d.music) {
+      const musicBytes = d.music_info?.size || estimateAudioBytes(duration, 128);
       formats.push({
         id: 'tt-audio',
         quality: 'Audio Only (MP3)',
         ext: 'mp3',
         type: 'audio',
         url: d.music,
+        filesize: formatBytes(musicBytes),
         isDirect: true
       });
     }
@@ -256,7 +305,11 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
       if (!seenQualities.has(label) && height >= 144) {
         seenQualities.add(label);
-        const bytes = f.filesize || f.filesize_approx;
+        const rawBytes = f.filesize || f.filesize_approx || (
+          (f.tbr || f.vbr) && info.duration
+            ? Math.round(((f.tbr || (f.vbr || 0) + (f.abr || 0)) * 1000 / 8) * info.duration)
+            : estimateBytes(height, info.duration)
+        );
         formats.push({
           id: f.format_id || `v-${height}`,
           quality: label,
@@ -264,7 +317,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           ext: f.ext || 'mp4',
           type: 'video',
           url: f.url,
-          filesize: bytes ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : undefined,
+          filesize: formatBytes(rawBytes),
           isDirect: true
         });
       }
@@ -278,38 +331,50 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
     if (audioStreams.length > 0) {
       const bestAudio = audioStreams[0];
-      const audioBytes = bestAudio.filesize || bestAudio.filesize_approx;
+      const audioAbr = bestAudio.abr || bestAudio.tbr || 128;
+      const rawAudioBytes = bestAudio.filesize || bestAudio.filesize_approx || (
+        (bestAudio.abr || bestAudio.tbr) && info.duration
+          ? Math.round(((bestAudio.abr || bestAudio.tbr) * 1000 / 8) * info.duration)
+          : estimateAudioBytes(info.duration, audioAbr)
+      );
       formats.push({
         id: bestAudio.format_id || 'best-audio',
         quality: `Audio Only (${bestAudio.abr ? Math.round(bestAudio.abr) + 'kbps' : 'HQ MP3'})`,
         ext: 'mp3',
         type: 'audio',
         url: bestAudio.url,
-        filesize: audioBytes ? `${(audioBytes / (1024 * 1024)).toFixed(1)} MB` : undefined,
+        filesize: formatBytes(rawAudioBytes),
         isDirect: true
       });
     } else if (formats.length > 0) {
       // Fallback: guarantee Audio Only (MP3) option even if dedicated DASH audio track is absent
       const primaryStream = formats[0];
+      const fallbackAudioBytes = estimateAudioBytes(info.duration, 128);
       formats.push({
         id: 'fallback-audio',
         quality: 'Audio Only (MP3)',
         ext: 'mp3',
         type: 'audio',
         url: primaryStream.url,
-        filesize: primaryStream.filesize,
+        filesize: formatBytes(fallbackAudioBytes) || primaryStream.filesize,
         isDirect: true
       });
     }
 
     // Fallback if no specific video stream matched
     if (formats.length === 0 && info.url) {
+      const defaultBytes = info.filesize || info.filesize_approx || (
+        info.tbr && info.duration
+          ? Math.round((info.tbr * 1000 / 8) * info.duration)
+          : estimateBytes(720, info.duration)
+      );
       formats.push({
         id: 'direct-default',
         quality: 'Default Video (Best)',
         ext: info.ext || 'mp4',
         type: 'video',
         url: info.url,
+        filesize: formatBytes(defaultBytes),
         isDirect: true
       });
     }
