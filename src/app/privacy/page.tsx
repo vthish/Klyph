@@ -4,14 +4,14 @@ import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import Link from 'next/link';
-import { 
-  ArrowLeft, 
-  ShieldCheck, 
-  Lock, 
-  DatabaseZap, 
-  HardDriveDownload, 
-  EyeOff, 
-  CheckCircle2, 
+import {
+  ArrowLeft,
+  ShieldCheck,
+  Lock,
+  DatabaseZap,
+  HardDriveDownload,
+  EyeOff,
+  CheckCircle2,
   FileText
 } from 'lucide-react';
 
@@ -44,17 +44,17 @@ export default function PrivacyPage() {
       <Header />
       <div style={{ flex: 1, padding: '40px 0 70px' }}>
         <div className="container" style={{ maxWidth: '920px' }}>
-          <Link 
-            href="/" 
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: '8px', 
-              color: 'var(--accent-cyan)', 
-              textDecoration: 'none', 
-              fontSize: '14px', 
+          <Link
+            href="/"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              color: 'var(--accent-cyan)',
+              textDecoration: 'none',
+              fontSize: '14px',
               fontWeight: 600,
-              marginBottom: '28px' 
+              marginBottom: '28px'
             }}
           >
             <ArrowLeft size={16} />
@@ -104,11 +104,11 @@ export default function PrivacyPage() {
           </div>
 
           {/* 4 Pillars Grid */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
-            gap: '18px', 
-            marginBottom: '32px' 
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: '18px',
+            marginBottom: '32px'
           }}>
             {pillars.map((p, idx) => (
               <div key={idx} className="feature-box" style={{ padding: '24px' }}>
@@ -133,22 +133,22 @@ export default function PrivacyPage() {
               Summary of data types and our handling commitments:
             </p>
 
-            <div style={{ 
-              background: 'rgba(255,255,255,0.02)', 
-              border: '1px solid var(--border-subtle)', 
+            <div style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: '10px',
               overflowX: 'auto',
               WebkitOverflowScrolling: 'touch'
             }}>
               <div style={{ minWidth: '540px' }}>
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1.5fr 1fr 1.5fr', 
-                  padding: '12px 18px', 
-                  borderBottom: '1px solid var(--border-subtle)', 
-                  fontWeight: 700, 
-                  fontSize: '12px', 
-                  color: 'var(--text-sub)' 
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.5fr 1fr 1.5fr',
+                  padding: '12px 18px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  color: 'var(--text-sub)'
                 }}>
                   <span>DATA TYPE</span>
                   <span>COLLECTED?</span>
@@ -191,10 +191,10 @@ export default function PrivacyPage() {
               Because Klyph processes zero personal data, maintains no user databases, and collects no profiling identifiers, your rights under the General Data Protection Regulation (GDPR) and California Consumer Privacy Act (CCPA) are fully respected by default. No personal data exists to be requested, altered, or deleted.
             </p>
 
-            <div style={{ 
-              background: 'rgba(0,242,254,0.05)', 
-              border: '1px solid rgba(0,242,254,0.2)', 
-              borderRadius: '10px', 
+            <div style={{
+              background: 'rgba(0,242,254,0.05)',
+              border: '1px solid rgba(0,242,254,0.2)',
+              borderRadius: '10px',
               padding: '16px 20px',
               display: 'flex',
               alignItems: 'center',
@@ -203,10 +203,10 @@ export default function PrivacyPage() {
               <CheckCircle2 size={20} color="#00f2fe" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '13px', color: '#e2e8f0' }}>
                 For open-source security audits or privacy inquiries, inspect our source code publicly on{' '}
-                <a 
-                  href="https://github.com/vthish/Klyph" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
+                <a
+                  href="https://github.com/vthish/Klyph"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}
                 >
                   GitHub
