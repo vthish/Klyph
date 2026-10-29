@@ -67,6 +67,56 @@ async function extractTikTok(url: string): Promise<VideoMetadata> {
 }
 
 /**
+ * Safely resolves cookies from YOUTUBE_COOKIES environment variable
+ * Handles Render/Cloud newline escaping, surrounding quotes, and base64 encoding.
+ */
+function resolveCookiesPath(): string | null {
+  const envCookies = process.env.YOUTUBE_COOKIES;
+  if (envCookies) {
+    let raw = envCookies.trim();
+
+    // Strip wrapping quotes if user pasted with quotes
+    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+      raw = raw.slice(1, -1).trim();
+    }
+
+    // Restore escaped newlines (\n -> actual line break)
+    if (raw.includes('\\n') && !raw.includes('\n')) {
+      raw = raw.replace(/\\n/g, '\n').replace(/\\r/g, '');
+    }
+
+    // Auto-decode if user provided base64 encoded string
+    if (!raw.includes('\t') && !raw.includes('youtube.com')) {
+      try {
+        const decoded = Buffer.from(raw, 'base64').toString('utf-8');
+        if (decoded.includes('youtube.com') || decoded.includes('\t')) {
+          raw = decoded;
+        }
+      } catch (_) {}
+    }
+
+    // Write to /tmp on Linux or cwd on Windows
+    const candidatePaths = [
+      process.platform === 'win32' ? null : '/tmp/klyph_cookies.txt',
+      path.join(process.cwd(), 'cookies.txt')
+    ].filter(Boolean) as string[];
+
+    for (const p of candidatePaths) {
+      try {
+        fs.writeFileSync(p, raw, 'utf-8');
+        return p;
+      } catch (_) {}
+    }
+  }
+
+  const localFile = path.join(process.cwd(), 'cookies.txt');
+  if (fs.existsSync(localFile)) {
+    return localFile;
+  }
+  return null;
+}
+
+/**
  * Universal media extractor
  */
 export async function extractMedia(url: string): Promise<VideoMetadata> {
@@ -86,24 +136,18 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
   try {
     const cleanUrl = url.trim();
-    const args = ['-m', 'yt_dlp', '-j', '--no-playlist'];
+    const args = ['-m', 'yt_dlp', '-j', '--no-playlist', '--no-check-certificates', '--geo-bypass'];
 
-    // Provide Node.js runtime for YouTube JavaScript n-challenge solving
-    const nodePath = 'C:\\Program Files\\nodejs\\node.exe';
-    if (fs.existsSync(nodePath)) {
-      args.push('--js-runtimes', `node:${nodePath}`);
+    // Provide Node.js runtime for YouTube JavaScript n-challenge solving (using exact process.execPath)
+    if (process.execPath && fs.existsSync(process.execPath)) {
+      args.push('--js-runtimes', `node:${process.execPath}`);
     } else {
       args.push('--js-runtimes', 'node');
     }
 
-    // Auto-detect or restore cookies.txt from environment variable (for Railway / Cloud hosting)
-    const cookiesPath = path.join(process.cwd(), 'cookies.txt');
-    if (process.env.YOUTUBE_COOKIES && !fs.existsSync(cookiesPath)) {
-      try {
-        fs.writeFileSync(cookiesPath, process.env.YOUTUBE_COOKIES, 'utf-8');
-      } catch (_) {}
-    }
-    if (fs.existsSync(cookiesPath)) {
+    // Auto-detect or restore cookies.txt from environment variable (for Render / Railway / Cloud hosting)
+    const cookiesPath = resolveCookiesPath();
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
       args.push('--cookies', cookiesPath);
     }
 

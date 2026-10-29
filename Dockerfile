@@ -43,3 +43,4 @@ EXPOSE 3000
 
 # Start Next.js server
 CMD ["npm", "start"]
+
