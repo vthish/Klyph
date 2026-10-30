@@ -267,6 +267,26 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
     const info = JSON.parse(stdout);
     const rawFormats = info.formats || [];
+
+    // Extract actual duration (handle platforms like Instagram where duration is embedded in URL efg)
+    let realDuration = info.duration;
+    if (!realDuration) {
+      for (const f of rawFormats) {
+        const u = f.url || '';
+        if (u.includes('efg=')) {
+          try {
+            const efgMatch = u.match(/[?&]efg=([^&]+)/);
+            if (efgMatch && efgMatch[1]) {
+              const decoded = JSON.parse(Buffer.from(decodeURIComponent(efgMatch[1]), 'base64').toString('utf-8'));
+              if (decoded.duration_s) {
+                realDuration = decoded.duration_s;
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
     const formats: VideoFormat[] = [];
     const seenQualities = new Set<string>();
 
@@ -280,9 +300,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const audioAbr = bestAudio ? (bestAudio.abr || bestAudio.tbr || 128) : 128;
     const rawAudioBytes = bestAudio
       ? (bestAudio.filesize || bestAudio.filesize_approx || (
-          info.duration ? Math.round(((audioAbr * 1000) / 8) * info.duration) : estimateAudioBytes(undefined, audioAbr)
+          realDuration ? Math.round(((audioAbr * 1000) / 8) * realDuration) : estimateAudioBytes(undefined, audioAbr)
         ))
-      : estimateAudioBytes(info.duration, 128);
+      : estimateAudioBytes(realDuration, 128);
 
     // 2. Extract best video streams (prioritize direct https mp4 streams over m3u8 playlists)
     const videoStreams = rawFormats
@@ -292,9 +312,15 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         const bM3u8 = (b.protocol || '').includes('m3u8') ? 1 : 0;
         if (aM3u8 !== bM3u8) return aM3u8 - bM3u8;
 
-        const hA = a.height || a.width || 0;
-        const hB = b.height || b.width || 0;
-        if (hB !== hA) return hB - hA;
+        const wA = a.width || 0;
+        const hA = a.height || 0;
+        const resA = (wA && hA) ? Math.min(wA, hA) : (hA || wA || 0);
+
+        const wB = b.width || 0;
+        const hB = b.height || 0;
+        const resB = (wB && hB) ? Math.min(wB, hB) : (hB || wB || 0);
+
+        if (resB !== resA) return resB - resA;
 
         if (a.ext === 'mp4' && b.ext !== 'mp4') return -1;
         if (b.ext === 'mp4' && a.ext !== 'mp4') return 1;
@@ -303,7 +329,11 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       });
 
     for (const f of videoStreams) {
-      const height = f.height || (f.width && f.width < 1080 ? f.width : 720);
+      const w = f.width || 0;
+      const h = f.height || 0;
+      // In video standards, resolution is based on the shorter edge (1080x1920 is 1080p Full HD, not 2K!)
+      const height = (w && h) ? Math.min(w, h) : (h || w || 720);
+
       let label = `${height}p`;
       if (height >= 2160) label = '4K Ultra HD (2160p)';
       else if (height >= 1440) label = '2K Quad HD (1440p)';
@@ -317,9 +347,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         seenQualities.add(label);
         const hasNativeAudio = Boolean(f.acodec && f.acodec !== 'none');
         const rawVideoBytes = f.filesize || f.filesize_approx || (
-          (f.tbr || f.vbr) && info.duration
-            ? Math.round(((f.tbr || (f.vbr || 0) + (f.abr || 0)) * 1000 / 8) * info.duration)
-            : estimateBytes(height, info.duration)
+          (f.tbr || f.vbr) && realDuration
+            ? Math.round(((f.tbr || (f.vbr || 0) + (f.abr || 0)) * 1000 / 8) * realDuration)
+            : estimateBytes(height, realDuration)
         );
 
         // If video-only (DASH stream), attach best audio stream for FFmpeg muxing
@@ -387,9 +417,10 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     }
 
     let durStr: string | undefined = undefined;
-    if (info.duration) {
-      const mins = Math.floor(info.duration / 60);
-      const secs = (info.duration % 60).toString().padStart(2, '0');
+    const durSecs = realDuration || info.duration;
+    if (durSecs) {
+      const mins = Math.floor(durSecs / 60);
+      const secs = (durSecs % 60).toString().padStart(2, '0');
       durStr = `${mins}:${secs}`;
     }
 
