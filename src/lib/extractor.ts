@@ -33,7 +33,8 @@ export function formatBytes(bytes?: number | null): string | undefined {
 function estimateBytes(height: number, durationSeconds?: number): number {
   const duration = (durationSeconds && durationSeconds > 0) ? durationSeconds : 30;
   let bytesPerSec = 60 * 1024;
-  if (height >= 2160) bytesPerSec = 2200 * 1024;
+  if (height >= 4320) bytesPerSec = 5200 * 1024;
+  else if (height >= 2160) bytesPerSec = 2200 * 1024;
   else if (height >= 1440) bytesPerSec = 1100 * 1024;
   else if (height >= 1080) bytesPerSec = 500 * 1024;
   else if (height >= 720) bytesPerSec = 260 * 1024;
@@ -335,7 +336,8 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
       const height = (w && h) ? Math.min(w, h) : (h || w || 720);
 
       let label = `${height}p`;
-      if (height >= 2160) label = '4K Ultra HD (2160p)';
+      if (height >= 4320) label = '8K Ultra HD (4320p)';
+      else if (height >= 2160) label = '4K Ultra HD (2160p)';
       else if (height >= 1440) label = '2K Quad HD (1440p)';
       else if (height >= 1080) label = '1080p Full HD';
       else if (height >= 720) label = '720p HD';
