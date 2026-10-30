@@ -87,9 +87,16 @@ export default function Downloader() {
     const safeTitle = data?.title ? data.title.slice(0, 40) : 'video';
     const downloadFilename = `Klyph_${data?.platform || 'media'}_${safeTitle}.${format.ext}`;
 
-    let downloadEndpoint = `/api/download?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+    const cfWorkerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
+
+    let downloadEndpoint = '';
     if (format.audioUrl) {
-      downloadEndpoint += `&audioUrl=${encodeURIComponent(format.audioUrl)}`;
+      // Muxing required (video + separate audio stream) -> Pass through server FFmpeg
+      downloadEndpoint = `/api/download?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}&audioUrl=${encodeURIComponent(format.audioUrl)}`;
+    } else {
+      // Single-stream formats (Audio Only MP3, 360p progressive, Instagram reels, TikTok, FB HD)
+      // Stream directly through Cloudflare Colombo Edge Worker to bypass all datacenter throttling!
+      downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
     }
     
     const a = document.createElement('a');
