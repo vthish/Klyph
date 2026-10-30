@@ -23,6 +23,7 @@ export default function Downloader() {
   const [error, setError] = useState<AppError | null>(null);
   const [data, setData] = useState<VideoMetadata | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
 
   const detectedPlatform = detectPlatform(url);
 
@@ -95,8 +96,9 @@ export default function Downloader() {
     }
   };
 
-  const triggerDownload = (format: VideoFormat) => {
+  const triggerDownload = async (format: VideoFormat) => {
     setDownloadingId(format.id);
+    setDownloadProgress(null);
     
     const rawTitle = data?.title || 'video';
     // Clean illegal filename characters while preserving human-readable title and spaces
@@ -109,10 +111,9 @@ export default function Downloader() {
     const cfWorkerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
     const isYouTube = data?.platform === 'youtube';
     const effectiveSourceUrl = format.sourceUrl || url.trim();
-    // Video formats with separate audio tracks (e.g. Facebook/Instagram HD DASH or YouTube) must be muxed via server FFmpeg engine
     const needsServerDownload = isYouTube || Boolean(format.audioUrl) || !format.isDirect;
 
-    let downloadEndpoint = '';
+    let directDownloadEndpoint = '';
     if (needsServerDownload) {
       const params = new URLSearchParams();
       params.set('url', format.url);
@@ -124,21 +125,100 @@ export default function Downloader() {
       if (format.resolution) params.set('resolution', format.resolution);
       if (format.type) params.set('type', format.type);
 
-      downloadEndpoint = `/api/download?${params.toString()}`;
+      directDownloadEndpoint = `/api/download?${params.toString()}`;
     } else {
-      downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+      directDownloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
     }
-    
-    const a = document.createElement('a');
-    a.href = downloadEndpoint;
-    a.setAttribute('download', downloadFilename);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
 
-    setTimeout(() => {
-      setDownloadingId(null);
-    }, 2000);
+    // 1. HIGH-SPEED YOUTUBE ENGINE (Unthrottled Range-Chunking + Streaming Keep-Alive)
+    // Avoids Google 300 KB/s stream throttling and eliminates cloud proxy 30s TTFB timeouts
+    if (isYouTube && effectiveSourceUrl) {
+      try {
+        const res = await fetch('/api/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: 'youtube',
+            sourceUrl: effectiveSourceUrl,
+            formatId: format.id,
+            resolution: format.resolution,
+            type: format.type,
+            filename: downloadFilename
+          })
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error('Acceleration request failed');
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let readyDownloadUrl: string | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const msg = JSON.parse(line.trim());
+              if (msg.status === 'progress' && typeof msg.percent === 'number') {
+                setDownloadProgress(Math.round(msg.percent));
+              } else if (msg.status === 'ready' && msg.downloadUrl) {
+                readyDownloadUrl = msg.downloadUrl;
+              } else if (msg.status === 'error') {
+                throw new Error(msg.message || 'Error preparing download');
+              }
+            } catch (jsonErr: any) {
+              if (jsonErr.message && jsonErr.message !== 'Unexpected end of JSON input') {
+                console.warn('[Download Stream Parse]', jsonErr);
+              }
+            }
+          }
+        }
+
+        if (readyDownloadUrl) {
+          const a = document.createElement('a');
+          a.href = readyDownloadUrl;
+          a.setAttribute('download', downloadFilename);
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          throw new Error('No ready download URL received');
+        }
+      } catch (prepErr) {
+        console.warn('[High-Speed Engine Fallback]', prepErr);
+        // Fallback to direct link
+        const a = document.createElement('a');
+        a.href = directDownloadEndpoint;
+        a.setAttribute('download', downloadFilename);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        setDownloadingId(null);
+        setDownloadProgress(null);
+      }
+    } else {
+      // 2. NON-YOUTUBE PLATFORMS (Facebook HD, Instagram Reels, TikTok)
+      const a = document.createElement('a');
+      a.href = directDownloadEndpoint;
+      a.setAttribute('download', downloadFilename);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => {
+        setDownloadingId(null);
+      }, 2000);
+    }
   };
 
   return (
@@ -304,32 +384,41 @@ export default function Downloader() {
             </div>
 
             <div className="formats-grid">
-              {data.formats.map((fmt) => (
-                <button
-                  key={fmt.id}
-                  onClick={() => triggerDownload(fmt)}
-                  className="format-btn"
-                  disabled={downloadingId === fmt.id}
-                >
-                  <div className="format-label">
-                    <span className="format-quality">
-                      {fmt.type === 'audio' ? <Music size={14} /> : <Video size={14} />}
-                      {fmt.quality}
-                    </span>
-                    <span className="format-type">
-                      {fmt.ext.toUpperCase()} {fmt.filesize ? `• ${fmt.filesize}` : ''}
-                    </span>
-                  </div>
+              {data.formats.map((fmt) => {
+                const isThisDownloading = downloadingId === fmt.id;
+                return (
+                  <button
+                    key={fmt.id}
+                    onClick={() => triggerDownload(fmt)}
+                    className="format-btn"
+                    disabled={Boolean(downloadingId)}
+                  >
+                    <div className="format-label">
+                      <span className="format-quality">
+                        {fmt.type === 'audio' ? <Music size={14} /> : <Video size={14} />}
+                        {fmt.quality}
+                      </span>
+                      <span className="format-type">
+                        {isThisDownloading ? (
+                          <span style={{ color: '#00f2fe', fontWeight: 600 }}>
+                            {downloadProgress && downloadProgress > 0 ? `⚡ ${downloadProgress}%` : '⚡ Accelerating...'}
+                          </span>
+                        ) : (
+                          `${fmt.ext.toUpperCase()} ${fmt.filesize ? `• ${fmt.filesize}` : ''}`
+                        )}
+                      </span>
+                    </div>
 
-                  <div className="format-action-icon">
-                    {downloadingId === fmt.id ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <Download size={16} />
-                    )}
-                  </div>
-                </button>
-              ))}
+                    <div className="format-action-icon">
+                      {isThisDownloading ? (
+                        <Loader2 size={16} className="animate-spin text-cyan-400" />
+                      ) : (
+                        <Download size={16} />
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
