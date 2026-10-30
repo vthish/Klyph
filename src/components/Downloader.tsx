@@ -87,7 +87,10 @@ export default function Downloader() {
     const safeTitle = data?.title ? data.title.slice(0, 40) : 'video';
     const downloadFilename = `Klyph_${data?.platform || 'media'}_${safeTitle}.${format.ext}`;
 
-    const downloadEndpoint = `/api/download?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+    let downloadEndpoint = `/api/download?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+    if (format.audioUrl) {
+      downloadEndpoint += `&audioUrl=${encodeURIComponent(format.audioUrl)}`;
+    }
     
     const a = document.createElement('a');
     a.href = downloadEndpoint;
