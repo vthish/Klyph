@@ -248,6 +248,15 @@ export function resolveFfmpegPath(): string {
     for (const c of candidates) {
       if (fs.existsSync(c)) return c;
     }
+  } else {
+    const unixCandidates = [
+      '/usr/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/opt/homebrew/bin/ffmpeg'
+    ];
+    for (const c of unixCandidates) {
+      if (fs.existsSync(c)) return c;
+    }
   }
   return 'ffmpeg';
 }
