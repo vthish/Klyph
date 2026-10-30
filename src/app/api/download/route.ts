@@ -65,9 +65,58 @@ function cleanOldTempFiles() {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  const fileId = searchParams.get('fileId');
+  const filename = searchParams.get('filename') || 'Klyph_Media';
+
+  // 1. PREPARED FILE DELIVERY (Ultra High-Speed Instant Local Stream)
+  // When fileId is provided, the high-speed engine has already downloaded and muxed the file to tmpdir.
+  // We stream it instantly with exact Content-Length in < 2ms, achieving client's max line speed without proxy timeouts!
+  if (fileId) {
+    const safeFileId = path.basename(fileId);
+    if (!safeFileId.startsWith('klyph_') || !/^[a-zA-Z0-9_\.-]+$/.test(safeFileId)) {
+      return NextResponse.json({ error: 'Invalid fileId' }, { status: 400 });
+    }
+
+    const filePath = path.join(os.tmpdir(), safeFileId);
+    if (!fs.existsSync(filePath)) {
+      return NextResponse.json({ error: 'File expired or not found. Please try downloading again.' }, { status: 404 });
+    }
+
+    const stat = fs.statSync(filePath);
+    const ext = safeFileId.toLowerCase().endsWith('.mp3') ? 'mp3' : 'mp4';
+    const contentType = ext === 'mp3' ? 'audio/mpeg' : 'video/mp4';
+    const cleanFilename = filename
+      .replace(/[\/\\:\*\?"<>\|]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const downloadName = cleanFilename.toLowerCase().endsWith(`.${ext}`) ? cleanFilename : `${cleanFilename}.${ext}`;
+
+    const resHeaders = new Headers();
+    resHeaders.set('Content-Type', contentType);
+    resHeaders.set('Content-Length', stat.size.toString());
+    resHeaders.set('Content-Disposition', buildContentDisposition(downloadName, ext));
+    resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    resHeaders.set('Pragma', 'no-cache');
+    resHeaders.set('Expires', '0');
+    resHeaders.set('Accept-Ranges', 'bytes');
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.on('close', () => {
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        } catch (_) {}
+      }, 15000);
+    });
+
+    return new Response(Readable.toWeb(fileStream) as any, {
+      status: 200,
+      headers: resHeaders
+    });
+  }
+
   const targetUrl = searchParams.get('url') || '';
   const audioUrl = searchParams.get('audioUrl');
-  const filename = searchParams.get('filename') || 'Klyph_Media';
   const sourceUrl = searchParams.get('sourceUrl');
   const platform = searchParams.get('platform') || (targetUrl.includes('googlevideo.com') ? 'youtube' : 'unknown');
   const formatId = searchParams.get('formatId');
@@ -83,10 +132,10 @@ export async function GET(req: NextRequest) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // 1. INSTANT STREAM-MUXING ENGINE (YouTube 8K/4K/HD, Facebook HD, Instagram Reels)
-  // When both video (targetUrl) and audio (audioUrl) streams are available, mux and stream them immediately via FFmpeg pipe.
-  // This responds in < 1.5 seconds, eliminating cloud proxy 30s TTFB timeouts, and starts browser download instantly with full audio!
-  if (audioUrl && targetUrl && type !== 'audio') {
+  // 2. INSTANT STREAM-MUXING ENGINE (Facebook HD, Instagram Reels)
+  // When both video (targetUrl) and audio (audioUrl) streams are available for non-YouTube platforms,
+  // mux and stream them immediately via FFmpeg pipe. Meta CDNs do not throttle unchunked requests!
+  if (audioUrl && targetUrl && type !== 'audio' && platform !== 'youtube') {
     try {
       const ffmpegPath = resolveFfmpegPath();
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -165,9 +214,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 2. HIGH-SPEED YOUTUBE ENGINE (Unthrottled Range-Chunking + Guaranteed Muxed Audio)
-  // When sourceUrl is provided for YouTube, use yt-dlp on the server with 10M chunk ranges.
-  // This bypasses Google Video's 40-60 KB/s SABR bandwidth throttling and merges audio+video with FFmpeg!
+  // 3. HIGH-SPEED YOUTUBE ENGINE FALLBACK (for direct GET requests)
   if (platform === 'youtube' && sourceUrl) {
     cleanOldTempFiles();
 
@@ -220,6 +267,7 @@ export async function GET(req: NextRequest) {
       ytdlpArgs.push(
         '-f', formatSelector,
         '--merge-output-format', 'mp4/mkv',
+        '--postprocessor-args', 'ffmpeg:-c:v copy -c:a aac -b:a 192k',
         '-o', outTemplate,
         sourceUrl
       );
@@ -232,7 +280,6 @@ export async function GET(req: NextRequest) {
         maxBuffer: 50 * 1024 * 1024
       });
 
-      // 1. Check direct expected merged outputs
       const possibleExtensions = isAudio ? ['mp3', 'm4a', 'aac'] : ['mp4', 'mkv', 'webm'];
       let targetFile = '';
       for (const ext of possibleExtensions) {
@@ -243,7 +290,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // 2. Fallback if no exact extension matched (e.g. unmerged streams or custom container)
       if (!targetFile) {
         const allFiles = fs.readdirSync(tempDir);
         const candidates = allFiles
@@ -254,46 +300,9 @@ export async function GET(req: NextRequest) {
             catch { return false; }
           });
 
-        if (isAudio) {
+        if (candidates.length > 0) {
           candidates.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
-          if (candidates.length > 0) targetFile = candidates[0];
-        } else {
-          // Identify unmerged video and audio candidates
-          const videoCand = candidates
-            .filter(p => !/\.(m4a|mp3|opus|aac|ogg|wav)$/i.test(p) && !p.includes('.f140.') && !p.includes('.ba.'))
-            .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0];
-
-          const audioCand = candidates
-            .filter(p => /\.(m4a|mp3|opus|aac|ogg|wav)$/i.test(p) || p.includes('.f140.') || p.includes('.ba.'))
-            .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0];
-
-          if (videoCand && audioCand) {
-            console.log(`[YouTube Engine] Unmerged streams detected (${path.basename(videoCand)} + ${path.basename(audioCand)}). Performing fast local mux...`);
-            const muxOutput = `${tempFileBase}_merged.mp4`;
-            try {
-              await execFileAsync(ffmpegPath, [
-                '-hide_banner',
-                '-loglevel', 'error',
-                '-i', videoCand,
-                '-i', audioCand,
-                '-c:v', 'copy',
-                '-c:a', 'copy',
-                '-movflags', '+faststart',
-                muxOutput
-              ], { timeout: 45000 });
-              if (fs.existsSync(muxOutput)) {
-                targetFile = muxOutput;
-              }
-            } catch (muxErr) {
-              console.error('[YouTube Engine] Local mux failed, falling back to video stream:', muxErr);
-              targetFile = videoCand;
-            }
-          } else if (videoCand) {
-            targetFile = videoCand;
-          } else if (candidates.length > 0) {
-            candidates.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
-            targetFile = candidates[0];
-          }
+          targetFile = candidates[0];
         }
       }
 
@@ -344,7 +353,6 @@ export async function GET(req: NextRequest) {
           cleanupTemp();
         });
 
-        console.log(`[YouTube Engine] Prepared ${downloadName} (${stat.size} bytes). Streaming to user.`);
         return new Response(webStream as any, {
           status: 200,
           headers: streamHeaders
@@ -363,7 +371,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 3. SINGLE STREAM & NON-YOUTUBE PLATFORMS
+  // 4. SINGLE STREAM & NON-YOUTUBE PLATFORMS
   const isYouTubeTarget = platform === 'youtube' || targetUrl.includes('googlevideo.com');
   const cfWorkerUrl = process.env.CF_WORKER_URL || process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
 
@@ -373,8 +381,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${cfWorkerUrl}/?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(cleanFilename)}`);
   }
 
-  // For YOUTUBE single-stream formats (or when CF worker is unset):
-  // Stream directly through the server with HTTP Range requests so the server IP matches without 403 Forbidden!
+  // For single-stream formats (or when CF worker is unset):
   if (!targetUrl) {
     return NextResponse.json({ error: 'Stream URL not available' }, { status: 400 });
   }
@@ -418,5 +425,188 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     return NextResponse.redirect(targetUrl);
+  }
+}
+
+/**
+ * High-Speed Streaming Preparation Engine (Eliminates cloud proxy 30s timeouts & Google throttling)
+ * The client sends a POST request with video metadata. The server immediately returns an active chunked stream
+ * with heartbeats and progress events while yt-dlp accelerates the video using 10M range chunks.
+ * Once complete, it sends { status: 'ready', downloadUrl } which the client triggers to receive the muxed file instantly.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { platform = 'youtube', sourceUrl, formatId, resolution, type, filename = 'Klyph_Media' } = body;
+
+    if (!sourceUrl) {
+      return NextResponse.json({ error: 'sourceUrl is required' }, { status: 400 });
+    }
+
+    cleanOldTempFiles();
+
+    const tempId = `klyph_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const tempDir = os.tmpdir();
+    const tempFileBase = path.join(tempDir, tempId);
+
+    const pythonCmd = process.env.PYTHON_PATH || (process.platform === 'win32' ? 'python' : 'python3');
+    const ffmpegPath = resolveFfmpegPath();
+    const cookiesPath = resolveCookiesPath();
+
+    const cleanFilename = filename
+      .replace(/[\/\\:\*\?"<>\|]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const isAudio = type === 'audio' || cleanFilename.toLowerCase().endsWith('.mp3');
+    const outTemplate = `${tempFileBase}.%(ext)s`;
+
+    const ytdlpArgs = [
+      '-m', 'yt_dlp',
+      '--no-playlist',
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--js-runtimes', 'node',
+      '--http-chunk-size', '10M',
+      '--concurrent-fragments', '4',
+      '--newline',
+    ];
+
+    if (ffmpegPath && ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) {
+      ytdlpArgs.push('--ffmpeg-location', ffmpegPath);
+    }
+
+    if (cookiesPath && fs.existsSync(cookiesPath)) {
+      ytdlpArgs.push('--cookies', cookiesPath);
+    }
+
+    if (isAudio) {
+      ytdlpArgs.push(
+        '-x',
+        '--audio-format', 'mp3',
+        '--audio-quality', '0',
+        '-o', outTemplate,
+        sourceUrl
+      );
+    } else {
+      const heightMatch = (resolution || '').match(/(\d+)p?/);
+      const height = heightMatch ? parseInt(heightMatch[1], 10) : 1080;
+
+      let formatSelector = `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]/bv*[height<=${height}]+ba[ext=m4a]/bv*[height<=${height}]+ba/best`;
+      if (formatId && !formatId.startsWith('v-')) {
+        formatSelector = `${formatId}+ba[ext=m4a]/${formatId}+ba/bv*[height<=${height}]+ba/best`;
+      }
+
+      ytdlpArgs.push(
+        '-f', formatSelector,
+        '--merge-output-format', 'mp4/mkv',
+        '--postprocessor-args', 'ffmpeg:-c:v copy -c:a aac -b:a 192k',
+        '-o', outTemplate,
+        sourceUrl
+      );
+    }
+
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    // 1. Send instant initial chunk (TTFB < 10ms - completely satisfies proxy timeout!)
+    writer.write(encoder.encode(JSON.stringify({ status: 'started', message: 'Engine accelerating...' }) + '\n'));
+
+    // 2. Keepalive heartbeat every 2 seconds to keep connection indefinitely alive
+    const heartbeat = setInterval(() => {
+      try {
+        writer.write(encoder.encode(JSON.stringify({ status: 'progress', message: 'Accelerating chunks...' }) + '\n'));
+      } catch (_) {}
+    }, 2000);
+
+    const ytdlpProc = spawn(pythonCmd, ytdlpArgs);
+
+    req.signal.addEventListener('abort', () => {
+      try {
+        clearInterval(heartbeat);
+        ytdlpProc.kill('SIGKILL');
+      } catch (_) {}
+    });
+
+    const handleProgress = (data: Buffer) => {
+      const text = data.toString();
+      const match = text.match(/\[download\]\s+([\d\.]+)%/);
+      if (match && match[1]) {
+        const pct = parseFloat(match[1]);
+        try {
+          writer.write(encoder.encode(JSON.stringify({ status: 'progress', percent: pct }) + '\n'));
+        } catch (_) {}
+      }
+    };
+
+    ytdlpProc.stdout.on('data', handleProgress);
+    ytdlpProc.stderr.on('data', handleProgress);
+
+    ytdlpProc.on('close', async (code) => {
+      clearInterval(heartbeat);
+
+      if (code !== 0) {
+        try {
+          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Download engine error' }) + '\n'));
+          await writer.close();
+        } catch (_) {}
+        return;
+      }
+
+      try {
+        const files = fs.readdirSync(tempDir);
+        let producedFile: string | null = null;
+        for (const f of files) {
+          if (f.startsWith(tempId)) {
+            producedFile = path.join(tempDir, f);
+            break;
+          }
+        }
+
+        if (!producedFile || !fs.existsSync(producedFile)) {
+          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Produced file missing' }) + '\n'));
+          await writer.close();
+          return;
+        }
+
+        const actualExt = path.extname(producedFile).replace('.', '') || (isAudio ? 'mp3' : 'mp4');
+        const finalFilename = cleanFilename.toLowerCase().endsWith(`.${actualExt}`) ? cleanFilename : `${cleanFilename}.${actualExt}`;
+        const baseName = path.basename(producedFile);
+
+        writer.write(encoder.encode(JSON.stringify({
+          status: 'ready',
+          fileId: baseName,
+          filename: finalFilename,
+          downloadUrl: `/api/download?fileId=${encodeURIComponent(baseName)}&filename=${encodeURIComponent(finalFilename)}`
+        }) + '\n'));
+        await writer.close();
+      } catch (err: any) {
+        try {
+          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message || 'Processing failed' }) + '\n'));
+          await writer.close();
+        } catch (_) {}
+      }
+    });
+
+    ytdlpProc.on('error', async (err) => {
+      clearInterval(heartbeat);
+      try {
+        writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message }) + '\n'));
+        await writer.close();
+      } catch (_) {}
+    });
+
+    return new Response(readable, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+        'Pragma': 'no-cache',
+        'Connection': 'keep-alive',
+      }
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 });
   }
 }
