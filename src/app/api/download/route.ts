@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'URL parameter missing' }, { status: 400 });
   }
 
-  const cleanFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+  const cleanFilename = filename
+    .replace(/[\/\\:\*\?"<>\|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // If audioUrl is provided, mux video and audio streams together using FFmpeg
   if (audioUrl) {
