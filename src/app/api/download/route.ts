@@ -288,6 +288,15 @@ export async function GET(req: NextRequest) {
       const ffmpegPath = resolveFfmpegPath();
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+      let referer = 'https://www.youtube.com/';
+      if (platform === 'facebook' || targetUrl.includes('fbcdn.net')) {
+        referer = 'https://www.facebook.com/';
+      } else if (platform === 'instagram' || targetUrl.includes('cdninstagram.com')) {
+        referer = 'https://www.instagram.com/';
+      } else if (platform === 'tiktok' || targetUrl.includes('tiktokcdn.com')) {
+        referer = 'https://www.tiktok.com/';
+      }
+
       const ffmpegArgs = [
         '-hide_banner',
         '-loglevel', 'warning',
@@ -295,13 +304,13 @@ export async function GET(req: NextRequest) {
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
-        '-headers', 'Referer: https://www.youtube.com/\r\n',
+        '-headers', `Referer: ${referer}\r\n`,
         '-i', targetUrl,
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
-        '-headers', 'Referer: https://www.youtube.com/\r\n',
+        '-headers', `Referer: ${referer}\r\n`,
         '-i', audioUrl,
         '-map', '0:v:0',
         '-map', '1:a:0?',
