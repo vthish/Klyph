@@ -89,9 +89,7 @@ export async function GET(req: NextRequest) {
         } catch (_) {}
       });
 
-      let spawnFailed = false;
       ffmpegProc.on('error', (err) => {
-        spawnFailed = true;
         console.error('[Download Mux] FFmpeg spawn error:', err);
       });
 
