@@ -5,6 +5,38 @@ import { Readable } from 'stream';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+/**
+ * Safely builds RFC 5987 / RFC 6266 compliant Content-Disposition header.
+ * HTTP headers in Node.js/Fetch API only accept ByteString (ISO-8859-1, code <= 255).
+ * Non-ASCII characters (Sinhala, Tamil, Arabic, Hindi, CJK, Emoji) trigger:
+ * "TypeError: Cannot convert argument to a ByteString".
+ * 
+ * Compliant header format:
+ * attachment; filename="<safe_ascii_fallback>"; filename*=UTF-8''<percent_encoded_unicode_name>
+ */
+function buildContentDisposition(filename: string, defaultExt: string = 'mp4'): string {
+  let clean = filename
+    .replace(/[\/\\:\*\?"<>\|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!clean.toLowerCase().endsWith(`.${defaultExt.toLowerCase()}`)) {
+    clean = `${clean}.${defaultExt}`;
+  }
+
+  const asciiFallback = clean
+    .replace(/[^\x20-\x7E]/g, '_')
+    .replace(/["\\]/g, '')
+    .replace(/_{2,}/g, '_')
+    .trim() || `media.${defaultExt}`;
+
+  const encoded = encodeURIComponent(clean)
+    .replace(/['()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/\*/g, '%2A');
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
@@ -24,7 +56,6 @@ export async function GET(req: NextRequest) {
   if (audioUrl) {
     try {
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      const cfWorkerUrl = process.env.CF_WORKER_URL || process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
 
       // Use direct streams for FFmpeg on server so Google Video IP match succeeds without 403
       const ffmpegArgs = [
@@ -72,7 +103,7 @@ export async function GET(req: NextRequest) {
         status: 200,
         headers: {
           'Content-Type': 'video/mp4',
-          'Content-Disposition': `attachment; filename="${downloadName}"`,
+          'Content-Disposition': buildContentDisposition(downloadName, 'mp4'),
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
           'Pragma': 'no-cache',
           'Expires': '0'
@@ -109,7 +140,7 @@ export async function GET(req: NextRequest) {
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     const resHeaders = new Headers();
     resHeaders.set('Content-Type', contentType);
-    resHeaders.set('Content-Disposition', `attachment; filename="${cleanFilename}"`);
+    resHeaders.set('Content-Disposition', buildContentDisposition(cleanFilename, 'mp4'));
     resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     resHeaders.set('Pragma', 'no-cache');
     resHeaders.set('Expires', '0');

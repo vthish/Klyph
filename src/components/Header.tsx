@@ -16,7 +16,7 @@ export default function Header() {
             />
           </div>
           <span className="logo-text">Klyph</span>
-          <span className="logo-badge">PRO</span>
+          <span className="logo-badge">PRO v2.5</span>
         </Link>
 
         <div className="header-actions">
