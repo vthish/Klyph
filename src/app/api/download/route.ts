@@ -56,7 +56,6 @@ export async function GET(req: NextRequest) {
   if (audioUrl) {
     try {
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-      const cfWorkerUrl = process.env.CF_WORKER_URL || process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
 
       // Use direct streams for FFmpeg on server so Google Video IP match succeeds without 403
       const ffmpegArgs = [
@@ -87,12 +86,10 @@ export async function GET(req: NextRequest) {
       req.signal.addEventListener('abort', () => {
         try {
           ffmpegProc.kill('SIGKILL');
-        } catch (_) { }
+        } catch (_) {}
       });
 
-      let spawnFailed = false;
       ffmpegProc.on('error', (err) => {
-        spawnFailed = true;
         console.error('[Download Mux] FFmpeg spawn error:', err);
       });
 
@@ -100,16 +97,16 @@ export async function GET(req: NextRequest) {
       const webStream = Readable.toWeb(ffmpegProc.stdout);
       const downloadName = cleanFilename.endsWith('.mp4') ? cleanFilename : `${cleanFilename}.mp4`;
 
+      const streamHeaders = new Headers();
+      streamHeaders.set('Content-Type', 'video/mp4');
+      streamHeaders.set('Content-Disposition', buildContentDisposition(downloadName, 'mp4'));
+      streamHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      streamHeaders.set('Pragma', 'no-cache');
+      streamHeaders.set('Expires', '0');
+
       return new Response(webStream as any, {
         status: 200,
-        headers: {
-          'Content-Type': 'video/mp4',
-          'Content-Disposition': `attachment; filename="${downloadName}"`,
-          'Content-Disposition': buildContentDisposition(downloadName, 'mp4'),
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
+        headers: streamHeaders
       });
     } catch (muxErr) {
       console.error('[Download Mux] FFmpeg pipeline failed, falling back to direct stream:', muxErr);
@@ -142,7 +139,6 @@ export async function GET(req: NextRequest) {
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
     const resHeaders = new Headers();
     resHeaders.set('Content-Type', contentType);
-    resHeaders.set('Content-Disposition', `attachment; filename="${cleanFilename}"`);
     resHeaders.set('Content-Disposition', buildContentDisposition(cleanFilename, 'mp4'));
     resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     resHeaders.set('Pragma', 'no-cache');
