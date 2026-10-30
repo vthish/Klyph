@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
@@ -27,7 +30,9 @@ export async function GET(req: NextRequest) {
         '-i', audioUrl,
         '-c:v', 'copy',
         '-c:a', 'aac',
-        '-movflags', 'frag_keyframe+empty_moov',
+        '-b:a', '192k',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+        '-shortest',
         '-f', 'mp4',
         'pipe:1'
       ];
@@ -56,7 +61,9 @@ export async function GET(req: NextRequest) {
         headers: {
           'Content-Type': 'video/mp4',
           'Content-Disposition': `attachment; filename="${downloadName}"`,
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
     } catch (muxErr) {
@@ -86,7 +93,9 @@ export async function GET(req: NextRequest) {
     const resHeaders = new Headers();
     resHeaders.set('Content-Type', contentType);
     resHeaders.set('Content-Disposition', `attachment; filename="${cleanFilename}"`);
-    resHeaders.set('Cache-Control', 'no-cache');
+    resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    resHeaders.set('Pragma', 'no-cache');
+    resHeaders.set('Expires', '0');
 
     const contentLength = response.headers.get('content-length');
     if (contentLength) resHeaders.set('Content-Length', contentLength);

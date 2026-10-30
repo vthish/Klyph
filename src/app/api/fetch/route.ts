@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { extractMedia } from '@/lib/extractor';
 import { parseFriendlyError } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -18,12 +21,28 @@ export async function POST(req: NextRequest) {
             tip: 'Paste a link into the input box to start downloading.'
           }
         },
-        { status: 400 }
+        { 
+          status: 400,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }
       );
     }
 
     const metadata = await extractMedia(url.trim());
-    return NextResponse.json({ success: true, data: metadata });
+    return NextResponse.json(
+      { success: true, data: metadata },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
+    );
   } catch (error: any) {
     const rawError = error.message || '';
     const friendly = parseFriendlyError(rawError);
@@ -35,7 +54,14 @@ export async function POST(req: NextRequest) {
         errorDetails: friendly,
         debugError: rawError
       },
-      { status: 400 }
+      { 
+        status: 400,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      }
     );
   }
 }
