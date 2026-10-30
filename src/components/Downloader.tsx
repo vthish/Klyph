@@ -84,8 +84,13 @@ export default function Downloader() {
   const triggerDownload = (format: VideoFormat) => {
     setDownloadingId(format.id);
     
-    const safeTitle = data?.title ? data.title.slice(0, 40) : 'video';
-    const downloadFilename = `Klyph_${data?.platform || 'media'}_${safeTitle}.${format.ext}`;
+    const rawTitle = data?.title || 'video';
+    // Clean illegal filename characters while preserving human-readable title and spaces
+    const cleanTitle = rawTitle
+      .replace(/[\/\\:\*\?"<>\|]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const downloadFilename = `${cleanTitle}_klyph.${format.ext}`;
 
     const cfWorkerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
 
