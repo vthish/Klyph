@@ -24,6 +24,9 @@ export async function GET(req: NextRequest) {
       const ffmpegArgs = [
         '-hide_banner',
         '-loglevel', 'error',
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
         '-i', targetUrl,
         '-user_agent', userAgent,
@@ -73,13 +76,12 @@ export async function GET(req: NextRequest) {
 
   // Direct single-stream fallback (for TikTok, FB, Instagram, 360p progressive, or Audio-only)
   try {
+    const rangeHeader = req.headers.get('range') || 'bytes=0-';
     const reqHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Range': rangeHeader
     };
-    const rangeHeader = req.headers.get('range');
-    if (rangeHeader) {
-      reqHeaders['Range'] = rangeHeader;
-    }
 
     const response = await fetch(targetUrl, {
       headers: reqHeaders

@@ -249,6 +249,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     // Platform-specific extractor optimizations
     if (platform === 'youtube') {
       args.push('--js-runtimes', 'node');
+      args.push('--extractor-args', 'youtube:player_client=web_embedded,android');
 
       const cookiesPath = resolveCookiesPath();
       if (cookiesPath && fs.existsSync(cookiesPath)) {
