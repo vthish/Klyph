@@ -4,6 +4,9 @@ import Downloader from '@/components/Downloader';
 import Features from '@/components/Features';
 import Footer from '@/components/Footer';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default function Home() {
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>

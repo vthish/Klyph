@@ -95,7 +95,6 @@ export default function Downloader() {
     const a = document.createElement('a');
     a.href = downloadEndpoint;
     a.setAttribute('download', downloadFilename);
-    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
