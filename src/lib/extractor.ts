@@ -271,7 +271,6 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     // Platform-specific extractor optimizations
     if (platform === 'youtube') {
       args.push('--js-runtimes', 'node');
-      args.push('--extractor-args', 'youtube:player_client=android,web');
 
       const cookiesPath = resolveCookiesPath();
       if (cookiesPath && fs.existsSync(cookiesPath)) {
@@ -400,7 +399,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           isDirect: hasNativeAudio
         });
       }
-      if (formats.length >= 7) break;
+      if (formats.length >= 10) break;
     }
 
     // 3. Add dedicated Audio Only (MP3) track

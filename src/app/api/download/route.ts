@@ -107,7 +107,6 @@ export async function GET(req: NextRequest) {
       '--http-chunk-size', '10M',
       '--concurrent-fragments', '4',
       '--ffmpeg-location', ffmpegPath,
-      '--extractor-args', 'youtube:player_client=android,web'
     ];
 
     if (cookiesPath && fs.existsSync(cookiesPath)) {
