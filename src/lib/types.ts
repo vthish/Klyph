@@ -5,6 +5,7 @@ export interface VideoFormat {
   ext: string;
   type: 'video' | 'audio';
   url: string;
+  audioUrl?: string;
   filesize?: string;
   isDirect?: boolean;
 }
@@ -30,26 +31,18 @@ export function detectPlatform(url: string): VideoMetadata['platform'] {
   if (cleanUrl.includes('youtube.com') || cleanUrl.includes('youtu.be')) return 'youtube';
   if (cleanUrl.includes('tiktok.com')) return 'tiktok';
   if (cleanUrl.includes('instagram.com')) return 'instagram';
-  if (cleanUrl.includes('facebook.com') || cleanUrl.includes('fb.watch') || cleanUrl.includes('fb.com')) return 'facebook';
+  if (cleanUrl.includes('facebook.com') || cleanUrl.includes('fb.watch')) return 'facebook';
   return 'unknown';
 }
 
 export function parseFriendlyError(rawError: string, platform?: string): AppError {
   const text = (rawError || '').toLowerCase();
 
-  if (text.includes('this video is unavailable') || text.includes('video is unavailable') || text.includes('video unavailable') || text.includes('not found') || text.includes('does not exist') || text.includes('deleted') || text.includes('404')) {
+  if (text.includes('unavailable') || text.includes('not available') || text.includes('removed from youtube') || text.includes('has been removed')) {
     return {
       title: 'Video Not Found or Unavailable',
       message: 'This video is unavailable or has been removed from YouTube by the creator.',
       tip: 'Please ensure the video is public and viewable in an incognito window, then try again.'
-    };
-  }
-
-  if (text.includes('unavailable') || text.includes('not available') || text.includes('removed') || text.includes('deleted')) {
-    return {
-      title: 'Video Unavailable',
-      message: 'This video is unavailable or has been removed from YouTube.',
-      tip: 'The creator may have removed this video, set it to private, or it is restricted in your region.'
     };
   }
 

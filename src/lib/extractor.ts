@@ -229,16 +229,10 @@ function resolveCookiesPath(): string | null {
   return null;
 }
 
-/**
- * Universal media extractor
- */
 export async function extractMedia(url: string): Promise<VideoMetadata> {
   const platform = detectPlatform(url);
-  if (platform === 'unknown') {
-    throw new Error('Unsupported platform. Please enter a valid YouTube, TikTok, Instagram, or Facebook URL.');
-  }
 
-  // Handle TikTok directly via cloud engine
+  // TikTok specialized fetcher
   if (platform === 'tiktok') {
     try {
       return await extractTikTok(url);
@@ -274,7 +268,21 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const formats: VideoFormat[] = [];
     const seenQualities = new Set<string>();
 
-    // Extract best video streams (prioritize direct https mp4 streams over m3u8 playlists)
+    // 1. Extract best dedicated audio stream first (excluding m3u8 playlists)
+    const audioStreams = rawFormats
+      .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url && !(f.protocol || '').includes('m3u8'))
+      .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
+
+    const bestAudio = audioStreams.length > 0 ? audioStreams[0] : null;
+    const bestAudioUrl = bestAudio ? bestAudio.url : undefined;
+    const audioAbr = bestAudio ? (bestAudio.abr || bestAudio.tbr || 128) : 128;
+    const rawAudioBytes = bestAudio
+      ? (bestAudio.filesize || bestAudio.filesize_approx || (
+          info.duration ? Math.round(((audioAbr * 1000) / 8) * info.duration) : 0
+        ))
+      : (info.duration ? estimateAudioBytes(info.duration, 128) : 0);
+
+    // 2. Extract best video streams (prioritize direct https mp4 streams over m3u8 playlists)
     const videoStreams = rawFormats
       .filter((f: any) => f.vcodec && f.vcodec !== 'none' && f.url)
       .sort((a: any, b: any) => {
@@ -305,11 +313,19 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
       if (!seenQualities.has(label) && height >= 144) {
         seenQualities.add(label);
-        const rawBytes = f.filesize || f.filesize_approx || (
+        const hasNativeAudio = Boolean(f.acodec && f.acodec !== 'none');
+        const rawVideoBytes = f.filesize || f.filesize_approx || (
           (f.tbr || f.vbr) && info.duration
             ? Math.round(((f.tbr || (f.vbr || 0) + (f.abr || 0)) * 1000 / 8) * info.duration)
             : estimateBytes(height, info.duration)
         );
+
+        // If video-only (DASH stream), attach best audio stream for FFmpeg muxing
+        const attachedAudioUrl = !hasNativeAudio && bestAudioUrl ? bestAudioUrl : undefined;
+        const totalBytes = hasNativeAudio 
+          ? rawVideoBytes 
+          : (rawVideoBytes ? rawVideoBytes + (rawAudioBytes || 0) : rawVideoBytes);
+
         formats.push({
           id: f.format_id || `v-${height}`,
           quality: label,
@@ -317,26 +333,16 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           ext: f.ext || 'mp4',
           type: 'video',
           url: f.url,
-          filesize: formatBytes(rawBytes),
-          isDirect: true
+          audioUrl: attachedAudioUrl,
+          filesize: formatBytes(totalBytes),
+          isDirect: hasNativeAudio
         });
       }
       if (formats.length >= 7) break;
     }
 
-    // Extract audio stream (excluding m3u8 playlists)
-    const audioStreams = rawFormats
-      .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url && !(f.protocol || '').includes('m3u8'))
-      .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
-
-    if (audioStreams.length > 0) {
-      const bestAudio = audioStreams[0];
-      const audioAbr = bestAudio.abr || bestAudio.tbr || 128;
-      const rawAudioBytes = bestAudio.filesize || bestAudio.filesize_approx || (
-        (bestAudio.abr || bestAudio.tbr) && info.duration
-          ? Math.round(((bestAudio.abr || bestAudio.tbr) * 1000 / 8) * info.duration)
-          : estimateAudioBytes(info.duration, audioAbr)
-      );
+    // 3. Add dedicated Audio Only (MP3) track
+    if (bestAudio) {
       formats.push({
         id: bestAudio.format_id || 'best-audio',
         quality: `Audio Only (${bestAudio.abr ? Math.round(bestAudio.abr) + 'kbps' : 'HQ MP3'})`,
@@ -347,7 +353,6 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         isDirect: true
       });
     } else if (formats.length > 0) {
-      // Fallback: guarantee Audio Only (MP3) option even if dedicated DASH audio track is absent
       const primaryStream = formats[0];
       const fallbackAudioBytes = estimateAudioBytes(info.duration, 128);
       formats.push({
