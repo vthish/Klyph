@@ -1,14 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { spawn } from 'child_process';
+import { Readable } from 'stream';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const targetUrl = searchParams.get('url');
+  const audioUrl = searchParams.get('audioUrl');
   const filename = searchParams.get('filename') || 'Klyph_Media';
 
   if (!targetUrl) {
     return NextResponse.json({ error: 'URL parameter missing' }, { status: 400 });
   }
 
+  const cleanFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+
+  // If audioUrl is provided, mux video and audio streams together using FFmpeg
+  if (audioUrl) {
+    try {
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      const ffmpegArgs = [
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-user_agent', userAgent,
+        '-i', targetUrl,
+        '-user_agent', userAgent,
+        '-i', audioUrl,
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-movflags', 'frag_keyframe+empty_moov',
+        '-f', 'mp4',
+        'pipe:1'
+      ];
+
+      const ffmpegProc = spawn('ffmpeg', ffmpegArgs);
+
+      // Kill FFmpeg immediately if client cancels or disconnects
+      req.signal.addEventListener('abort', () => {
+        try {
+          ffmpegProc.kill('SIGKILL');
+        } catch (_) {}
+      });
+
+      let spawnFailed = false;
+      ffmpegProc.on('error', (err) => {
+        spawnFailed = true;
+        console.error('[Download Mux] FFmpeg spawn error:', err);
+      });
+
+      // Stream the combined MP4 directly to the browser
+      const webStream = Readable.toWeb(ffmpegProc.stdout);
+      const downloadName = cleanFilename.endsWith('.mp4') ? cleanFilename : `${cleanFilename}.mp4`;
+
+      return new Response(webStream as any, {
+        status: 200,
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Disposition': `attachment; filename="${downloadName}"`,
+          'Cache-Control': 'no-cache'
+        }
+      });
+    } catch (muxErr) {
+      console.error('[Download Mux] FFmpeg pipeline failed, falling back to direct stream:', muxErr);
+    }
+  }
+
+  // Direct single-stream fallback (for TikTok, FB, Instagram, 360p progressive, or Audio-only)
   try {
     const reqHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -27,8 +83,6 @@ export async function GET(req: NextRequest) {
     }
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    const cleanFilename = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-
     const resHeaders = new Headers();
     resHeaders.set('Content-Type', contentType);
     resHeaders.set('Content-Disposition', `attachment; filename="${cleanFilename}"`);
