@@ -58,8 +58,22 @@ export default function Downloader() {
         body: JSON.stringify({ url: url.trim() })
       });
 
+      if (!res.ok) {
+        let errorData: AppError = {
+          title: 'Service Updating',
+          message: 'The downloader service was temporarily restarting during an update.',
+          tip: 'Please wait a few seconds and click Download again.'
+        };
+        try {
+          const json = await res.json();
+          if (json.errorDetails) errorData = json.errorDetails;
+        } catch (_) {}
+        setError(errorData);
+        return;
+      }
+
       const json = await res.json();
-      if (!res.ok || !json.success) {
+      if (!json.success) {
         const errorData: AppError = json.errorDetails || {
           title: 'Unable to Process Link',
           message: json.error || 'Failed to fetch media details.',
