@@ -107,14 +107,23 @@ export default function Downloader() {
     const downloadFilename = `${cleanTitle}_klyph.${format.ext}`;
 
     const cfWorkerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
+    const isYouTube = data?.platform === 'youtube';
+    const effectiveSourceUrl = format.sourceUrl || url.trim();
 
     let downloadEndpoint = '';
-    if (format.audioUrl) {
-      // Muxing required (video + separate audio stream) -> Pass through server FFmpeg
-      downloadEndpoint = `/api/download?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}&audioUrl=${encodeURIComponent(format.audioUrl)}`;
+    if (isYouTube) {
+      const params = new URLSearchParams();
+      params.set('url', format.url);
+      params.set('filename', downloadFilename);
+      params.set('platform', 'youtube');
+      if (effectiveSourceUrl) params.set('sourceUrl', effectiveSourceUrl);
+      if (format.audioUrl) params.set('audioUrl', format.audioUrl);
+      if (format.id) params.set('formatId', format.id);
+      if (format.resolution) params.set('resolution', format.resolution);
+      if (format.type) params.set('type', format.type);
+
+      downloadEndpoint = `/api/download?${params.toString()}`;
     } else {
-      // Single-stream formats (Audio Only MP3, 360p progressive, Instagram reels, TikTok, FB HD)
-      // Stream directly through Cloudflare Colombo Edge Worker to bypass all datacenter throttling!
       downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
     }
     

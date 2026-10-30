@@ -6,6 +6,7 @@ export interface VideoFormat {
   type: 'video' | 'audio';
   url: string;
   audioUrl?: string;
+  sourceUrl?: string;
   filesize?: string;
   isDirect?: boolean;
 }
