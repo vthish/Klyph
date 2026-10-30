@@ -199,7 +199,7 @@ function sanitizeAndWriteCookies(rawInput: string): string | null {
 /**
  * Safely resolves cookies from Render Secret Files, YOUTUBE_COOKIES env, or local workspace
  */
-function resolveCookiesPath(): string | null {
+export function resolveCookiesPath(): string | null {
   // 1. Check Render Secret Files directory first (/etc/secrets/cookies.txt)
   const renderSecret = '/etc/secrets/cookies.txt';
   if (fs.existsSync(renderSecret)) {
@@ -231,6 +231,27 @@ function resolveCookiesPath(): string | null {
   return null;
 }
 
+/**
+ * Safely resolves ffmpeg executable across Windows, Docker, and Linux environments
+ */
+export function resolveFfmpegPath(): string {
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    return process.env.FFMPEG_PATH;
+  }
+  if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\Softdeluxe\\Free Download Manager\\ffmpeg.exe',
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+      path.join(process.cwd(), 'ffmpeg.exe')
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+  }
+  return 'ffmpeg';
+}
+
 export async function extractMedia(url: string): Promise<VideoMetadata> {
   const platform = detectPlatform(url);
 
@@ -250,7 +271,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     // Platform-specific extractor optimizations
     if (platform === 'youtube') {
       args.push('--js-runtimes', 'node');
-      args.push('--extractor-args', 'youtube:player_client=web_embedded,android');
+      args.push('--extractor-args', 'youtube:player_client=android,web');
 
       const cookiesPath = resolveCookiesPath();
       if (cookiesPath && fs.existsSync(cookiesPath)) {
@@ -374,6 +395,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
           type: 'video',
           url: f.url,
           audioUrl: attachedAudioUrl,
+          sourceUrl: cleanUrl,
           filesize: formatBytes(totalBytes),
           isDirect: hasNativeAudio
         });
@@ -389,6 +411,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         ext: 'mp3',
         type: 'audio',
         url: bestAudio.url,
+        sourceUrl: cleanUrl,
         filesize: formatBytes(rawAudioBytes),
         isDirect: true
       });
@@ -401,6 +424,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         ext: 'mp3',
         type: 'audio',
         url: primaryStream.url,
+        sourceUrl: cleanUrl,
         filesize: formatBytes(fallbackAudioBytes) || primaryStream.filesize,
         isDirect: true
       });
@@ -419,6 +443,7 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
         ext: info.ext || 'mp4',
         type: 'video',
         url: info.url,
+        sourceUrl: cleanUrl,
         filesize: formatBytes(defaultBytes),
         isDirect: true
       });
