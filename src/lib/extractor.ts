@@ -30,25 +30,26 @@ export function formatBytes(bytes?: number | null): string | undefined {
 /**
  * Estimates video bytes based on resolution height and duration in seconds
  */
-function estimateBytes(height: number, durationSeconds?: number): number | undefined {
-  if (!durationSeconds || durationSeconds <= 0) return undefined;
+function estimateBytes(height: number, durationSeconds?: number): number {
+  const duration = (durationSeconds && durationSeconds > 0) ? durationSeconds : 30;
   let bytesPerSec = 60 * 1024;
   if (height >= 2160) bytesPerSec = 2200 * 1024;
   else if (height >= 1440) bytesPerSec = 1100 * 1024;
-  else if (height >= 1080) bytesPerSec = 450 * 1024;
-  else if (height >= 720) bytesPerSec = 220 * 1024;
-  else if (height >= 480) bytesPerSec = 110 * 1024;
-  else if (height >= 360) bytesPerSec = 60 * 1024;
-  else bytesPerSec = 35 * 1024;
-  return Math.round(bytesPerSec * durationSeconds);
+  else if (height >= 1080) bytesPerSec = 500 * 1024;
+  else if (height >= 720) bytesPerSec = 260 * 1024;
+  else if (height >= 480) bytesPerSec = 120 * 1024;
+  else if (height >= 360) bytesPerSec = 70 * 1024;
+  else bytesPerSec = 40 * 1024;
+  return Math.round(bytesPerSec * duration);
 }
 
 /**
  * Estimates audio bytes based on duration in seconds and bitrate
+ * (Falls back to typical 30-sec if duration is unknown)
  */
-function estimateAudioBytes(durationSeconds?: number, abr: number = 128): number | undefined {
-  if (!durationSeconds || durationSeconds <= 0) return undefined;
-  return Math.round(((abr * 1000) / 8) * durationSeconds);
+function estimateAudioBytes(durationSeconds?: number, abr: number = 128): number {
+  const duration = (durationSeconds && durationSeconds > 0) ? durationSeconds : 30;
+  return Math.round(((abr * 1000) / 8) * duration);
 }
 
 /**
@@ -278,9 +279,9 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const audioAbr = bestAudio ? (bestAudio.abr || bestAudio.tbr || 128) : 128;
     const rawAudioBytes = bestAudio
       ? (bestAudio.filesize || bestAudio.filesize_approx || (
-          info.duration ? Math.round(((audioAbr * 1000) / 8) * info.duration) : 0
+          info.duration ? Math.round(((audioAbr * 1000) / 8) * info.duration) : estimateAudioBytes(undefined, audioAbr)
         ))
-      : (info.duration ? estimateAudioBytes(info.duration, 128) : 0);
+      : estimateAudioBytes(info.duration, 128);
 
     // 2. Extract best video streams (prioritize direct https mp4 streams over m3u8 playlists)
     const videoStreams = rawFormats
