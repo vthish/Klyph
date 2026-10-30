@@ -25,9 +25,8 @@ function buildContentDisposition(filename: string, defaultExt: string = 'mp4'): 
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!clean.toLowerCase().endsWith(`.${defaultExt.toLowerCase()}`)) {
-    clean = `${clean}.${defaultExt}`;
-  }
+  clean = clean.replace(/\.(mp4|mkv|webm|mp3|m4a)$/i, '');
+  clean = `${clean}.${defaultExt}`;
 
   const asciiFallback = clean
     .replace(/[^\x20-\x7E]/g, '_')
@@ -106,8 +105,11 @@ export async function GET(req: NextRequest) {
       '--js-runtimes', 'node',
       '--http-chunk-size', '10M',
       '--concurrent-fragments', '4',
-      '--ffmpeg-location', ffmpegPath,
     ];
+
+    if (ffmpegPath && ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) {
+      ytdlpArgs.push('--ffmpeg-location', ffmpegPath);
+    }
 
     if (cookiesPath && fs.existsSync(cookiesPath)) {
       ytdlpArgs.push('--cookies', cookiesPath);
@@ -128,15 +130,14 @@ export async function GET(req: NextRequest) {
       const heightMatch = resolution.match(/(\d+)p?/);
       const height = heightMatch ? parseInt(heightMatch[1], 10) : 1080;
 
-      let formatSelector = `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]/bv*[height<=${height}]+ba/b[height<=${height}]/best`;
+      let formatSelector = `bv*[height<=${height}][ext=mp4]+ba[ext=m4a]/bv*[height<=${height}]+ba[ext=m4a]/bv*[height<=${height}]+ba/best`;
       if (formatId && !formatId.startsWith('v-')) {
-        formatSelector = `${formatId}+ba[ext=m4a]/bv*[height<=${height}]+ba/best`;
+        formatSelector = `${formatId}+ba[ext=m4a]/${formatId}+ba/bv*[height<=${height}]+ba/best`;
       }
 
       ytdlpArgs.push(
         '-f', formatSelector,
-        '--merge-output-format', 'mp4',
-        '--remux-video', 'mp4',
+        '--merge-output-format', 'mp4/mkv',
         '-o', outTemplate,
         sourceUrl
       );
@@ -145,18 +146,72 @@ export async function GET(req: NextRequest) {
     try {
       console.log(`[YouTube Engine] Accelerating download for: ${sourceUrl} (Type: ${type}, Res: ${resolution})`);
       await execFileAsync(pythonCmd, ytdlpArgs, {
-        timeout: 90000,
+        timeout: 120000,
         maxBuffer: 50 * 1024 * 1024
       });
 
-      const expectedExt = isAudio ? 'mp3' : 'mp4';
-      let targetFile = `${tempFileBase}.${expectedExt}`;
+      // 1. Check direct expected merged outputs
+      const possibleExtensions = isAudio ? ['mp3', 'm4a', 'aac'] : ['mp4', 'mkv', 'webm'];
+      let targetFile = '';
+      for (const ext of possibleExtensions) {
+        const candidate = `${tempFileBase}.${ext}`;
+        if (fs.existsSync(candidate)) {
+          targetFile = candidate;
+          break;
+        }
+      }
 
-      if (!fs.existsSync(targetFile)) {
-        const files = fs.readdirSync(tempDir);
-        const match = files.find(f => f.startsWith(tempId));
-        if (match) {
-          targetFile = path.join(tempDir, match);
+      // 2. Fallback if no exact extension matched (e.g. unmerged streams or custom container)
+      if (!targetFile) {
+        const allFiles = fs.readdirSync(tempDir);
+        const candidates = allFiles
+          .filter(f => f.startsWith(tempId) && !f.endsWith('.part') && !f.endsWith('.ytdl'))
+          .map(f => path.join(tempDir, f))
+          .filter(p => {
+            try { return fs.existsSync(p) && fs.statSync(p).isFile() && fs.statSync(p).size > 0; }
+            catch { return false; }
+          });
+
+        if (isAudio) {
+          candidates.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+          if (candidates.length > 0) targetFile = candidates[0];
+        } else {
+          // Identify unmerged video and audio candidates
+          const videoCand = candidates
+            .filter(p => !/\.(m4a|mp3|opus|aac|ogg|wav)$/i.test(p) && !p.includes('.f140.') && !p.includes('.ba.'))
+            .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0];
+
+          const audioCand = candidates
+            .filter(p => /\.(m4a|mp3|opus|aac|ogg|wav)$/i.test(p) || p.includes('.f140.') || p.includes('.ba.'))
+            .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size)[0];
+
+          if (videoCand && audioCand) {
+            console.log(`[YouTube Engine] Unmerged streams detected (${path.basename(videoCand)} + ${path.basename(audioCand)}). Performing fast local mux...`);
+            const muxOutput = `${tempFileBase}_merged.mp4`;
+            try {
+              await execFileAsync(ffmpegPath, [
+                '-hide_banner',
+                '-loglevel', 'error',
+                '-i', videoCand,
+                '-i', audioCand,
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-movflags', '+faststart',
+                muxOutput
+              ], { timeout: 45000 });
+              if (fs.existsSync(muxOutput)) {
+                targetFile = muxOutput;
+              }
+            } catch (muxErr) {
+              console.error('[YouTube Engine] Local mux failed, falling back to video stream:', muxErr);
+              targetFile = videoCand;
+            }
+          } else if (videoCand) {
+            targetFile = videoCand;
+          } else if (candidates.length > 0) {
+            candidates.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+            targetFile = candidates[0];
+          }
         }
       }
 
@@ -165,12 +220,21 @@ export async function GET(req: NextRequest) {
         const fileStream = fs.createReadStream(targetFile);
         const webStream = Readable.toWeb(fileStream);
 
-        const downloadExt = isAudio ? 'mp3' : 'mp4';
+        const actualExt = path.extname(targetFile).replace('.', '').toLowerCase() || (isAudio ? 'mp3' : 'mp4');
+        const downloadExt = actualExt === 'mkv' ? 'mkv' : (actualExt === 'webm' ? 'webm' : (isAudio ? 'mp3' : 'mp4'));
+
         const downloadName = cleanFilename.toLowerCase().endsWith(`.${downloadExt}`)
           ? cleanFilename
-          : `${cleanFilename}.${downloadExt}`;
+          : `${cleanFilename.replace(/\.(mp4|mkv|webm|mp3|m4a)$/i, '')}.${downloadExt}`;
 
-        const contentType = isAudio ? 'audio/mpeg' : 'video/mp4';
+        let contentType = 'video/mp4';
+        if (isAudio) {
+          contentType = actualExt === 'm4a' ? 'audio/mp4' : 'audio/mpeg';
+        } else if (actualExt === 'mkv') {
+          contentType = 'video/x-matroska';
+        } else if (actualExt === 'webm') {
+          contentType = 'video/webm';
+        }
 
         const streamHeaders = new Headers();
         streamHeaders.set('Content-Type', contentType);
@@ -181,14 +245,21 @@ export async function GET(req: NextRequest) {
         streamHeaders.set('Expires', '0');
         streamHeaders.set('Accept-Ranges', 'bytes');
 
-        fileStream.on('close', () => {
-          try { if (fs.existsSync(targetFile)) fs.unlinkSync(targetFile); } catch (_) {}
-        });
-        req.signal.addEventListener('abort', () => {
+        const cleanupTemp = () => {
           try {
-            fileStream.destroy();
-            if (fs.existsSync(targetFile)) fs.unlinkSync(targetFile);
+            const files = fs.readdirSync(tempDir);
+            for (const f of files) {
+              if (f.startsWith(tempId)) {
+                try { fs.unlinkSync(path.join(tempDir, f)); } catch (_) {}
+              }
+            }
           } catch (_) {}
+        };
+
+        fileStream.on('close', cleanupTemp);
+        req.signal.addEventListener('abort', () => {
+          try { fileStream.destroy(); } catch (_) {}
+          cleanupTemp();
         });
 
         console.log(`[YouTube Engine] Prepared ${downloadName} (${stat.size} bytes). Streaming to user.`);
