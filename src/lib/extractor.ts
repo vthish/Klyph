@@ -292,9 +292,15 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
     const seenQualities = new Set<string>();
 
     // 1. Extract best dedicated audio stream first (excluding m3u8 playlists)
+    // Extract best dedicated audio stream (prioritize native AAC/m4a for flawless MP4 muxing)
     const audioStreams = rawFormats
       .filter((f: any) => (!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none' && f.url && !(f.protocol || '').includes('m3u8'))
-      .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0));
+      .sort((a: any, b: any) => {
+        const aM4a = (a.ext === 'm4a' || (a.acodec || '').includes('mp4a')) ? 1 : 0;
+        const bM4a = (b.ext === 'm4a' || (b.acodec || '').includes('mp4a')) ? 1 : 0;
+        if (aM4a !== bM4a) return bM4a - aM4a;
+        return (b.abr || 0) - (a.abr || 0);
+      });
 
     const bestAudio = audioStreams.length > 0 ? audioStreams[0] : null;
     const bestAudioUrl = bestAudio ? bestAudio.url : undefined;
