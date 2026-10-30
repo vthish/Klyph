@@ -109,13 +109,15 @@ export default function Downloader() {
     const cfWorkerUrl = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
     const isYouTube = data?.platform === 'youtube';
     const effectiveSourceUrl = format.sourceUrl || url.trim();
+    // Video formats with separate audio tracks (e.g. Facebook/Instagram HD DASH or YouTube) must be muxed via server FFmpeg engine
+    const needsServerDownload = isYouTube || Boolean(format.audioUrl) || !format.isDirect;
 
     let downloadEndpoint = '';
-    if (isYouTube) {
+    if (needsServerDownload) {
       const params = new URLSearchParams();
       params.set('url', format.url);
       params.set('filename', downloadFilename);
-      params.set('platform', 'youtube');
+      params.set('platform', data?.platform || (isYouTube ? 'youtube' : 'unknown'));
       if (effectiveSourceUrl) params.set('sourceUrl', effectiveSourceUrl);
       if (format.audioUrl) params.set('audioUrl', format.audioUrl);
       if (format.id) params.set('formatId', format.id);

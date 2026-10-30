@@ -358,6 +358,11 @@ export async function extractMedia(url: string): Promise<VideoMetadata> {
 
         if (resB !== resA) return resB - resA;
 
+        // Prefer progressive stream with native audio over video-only DASH stream of same resolution
+        const nativeA = Boolean(a.acodec && a.acodec !== 'none') ? 1 : 0;
+        const nativeB = Boolean(b.acodec && b.acodec !== 'none') ? 1 : 0;
+        if (nativeB !== nativeA) return nativeB - nativeA;
+
         if (a.ext === 'mp4' && b.ext !== 'mp4') return -1;
         if (b.ext === 'mp4' && a.ext !== 'mp4') return 1;
 
