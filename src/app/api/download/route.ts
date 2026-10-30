@@ -26,15 +26,7 @@ export async function GET(req: NextRequest) {
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
       const cfWorkerUrl = process.env.CF_WORKER_URL || process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
 
-      // Route Google Video streams through Cloudflare edge to prevent Render IP throttling during FFmpeg muxing
-      const videoInput = (cfWorkerUrl && targetUrl.includes('googlevideo.com'))
-        ? `${cfWorkerUrl}/?url=${encodeURIComponent(targetUrl)}`
-        : targetUrl;
-
-      const audioInput = (cfWorkerUrl && audioUrl.includes('googlevideo.com'))
-        ? `${cfWorkerUrl}/?url=${encodeURIComponent(audioUrl)}`
-        : audioUrl;
-
+      // Use direct streams for FFmpeg on server so Google Video IP match succeeds without 403
       const ffmpegArgs = [
         '-hide_banner',
         '-loglevel', 'error',
@@ -42,9 +34,9 @@ export async function GET(req: NextRequest) {
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
-        '-i', videoInput,
+        '-i', targetUrl,
         '-user_agent', userAgent,
-        '-i', audioInput,
+        '-i', audioUrl,
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
