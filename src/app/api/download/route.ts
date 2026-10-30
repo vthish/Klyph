@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       // Use direct streams for FFmpeg on server so Google Video IP match succeeds without 403
       const ffmpegArgs = [
         '-hide_banner',
-        '-loglevel', 'error',
+        '-loglevel', 'warning',
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_delay_max', '5',
@@ -37,9 +37,12 @@ export async function GET(req: NextRequest) {
         '-i', targetUrl,
         '-user_agent', userAgent,
         '-i', audioUrl,
+        '-map', '0:v:0',
+        '-map', '1:a:0',
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
+        '-async', '1',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         '-shortest',
         '-f', 'mp4',
