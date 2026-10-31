@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn, execFile } from 'child_process';
+import { spawn, execFile, execSync } from 'child_process';
 import { promisify } from 'util';
 import { Readable } from 'stream';
 import fs from 'fs';
@@ -12,6 +12,19 @@ const execFileAsync = promisify(execFile);
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const maxDuration = 120;
+
+let cachedHasAria2: boolean | null = null;
+function hasAria2(): boolean {
+  if (cachedHasAria2 !== null) return cachedHasAria2;
+  try {
+    const cmd = process.platform === 'win32' ? 'where aria2c' : 'which aria2c';
+    execSync(cmd, { stdio: 'ignore' });
+    cachedHasAria2 = true;
+  } catch (_) {
+    cachedHasAria2 = false;
+  }
+  return cachedHasAria2;
+}
 
 /**
  * Safely builds RFC 5987 / RFC 6266 compliant Content-Disposition header.
@@ -236,6 +249,13 @@ export async function GET(req: NextRequest) {
       '--concurrent-fragments', '8',
     ];
 
+    if (hasAria2()) {
+      ytdlpArgs.push(
+        '--downloader', 'aria2c',
+        '--downloader-args', 'aria2c:-x 16 -s 16 -k 5M -j 16 --file-allocation=none'
+      );
+    }
+
     if (ffmpegPath && ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) {
       ytdlpArgs.push('--ffmpeg-location', ffmpegPath);
     }
@@ -431,7 +451,7 @@ export async function GET(req: NextRequest) {
 /**
  * High-Speed Streaming Preparation Engine (Eliminates cloud proxy 30s timeouts & Google throttling)
  * The client sends a POST request with video metadata. The server immediately returns an active chunked stream
- * with heartbeats and progress events while yt-dlp accelerates the video using 10M range chunks.
+ * with heartbeats and progress events while yt-dlp accelerates the video using 10M range chunks and aria2c multi-connection acceleration.
  * Once complete, it sends { status: 'ready', downloadUrl } which the client triggers to receive the muxed file instantly.
  */
 export async function POST(req: NextRequest) {
@@ -472,6 +492,13 @@ export async function POST(req: NextRequest) {
       '--progress',
       '--newline',
     ];
+
+    if (hasAria2()) {
+      ytdlpArgs.push(
+        '--downloader', 'aria2c',
+        '--downloader-args', 'aria2c:-x 16 -s 16 -k 5M -j 16 --file-allocation=none --summary-interval=1'
+      );
+    }
 
     if (ffmpegPath && ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) {
       ytdlpArgs.push('--ffmpeg-location', ffmpegPath);
@@ -532,7 +559,12 @@ export async function POST(req: NextRequest) {
 
     const handleProgress = (data: Buffer) => {
       const text = data.toString();
-      const match = text.match(/\[download\]\s+([\d\.]+)%/);
+      // Match yt-dlp native progress: "[download]  45.2% of 50.00MiB at 12.30MiB/s"
+      let match = text.match(/\[download\]\s+([\d\.]+)%/);
+      if (!match) {
+        // Match aria2c progress: "[#abc123 45.2MiB/120MiB(37%) CN:16 DL:42.5MiB]"
+        match = text.match(/\((\d+(?:\.\d+)?)%\)/);
+      }
       if (match && match[1]) {
         const pct = parseFloat(match[1]);
         try {

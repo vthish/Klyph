@@ -8,12 +8,13 @@ FROM node:20-slim
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies: Python 3, FFmpeg, Curl, Unzip, CA Certificates, and Deno JS runtime
+# Install system dependencies: Python 3, FFmpeg, Aria2, Curl, Unzip, CA Certificates, and Deno JS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python-is-python3 \
     ffmpeg \
+    aria2 \
     curl \
     unzip \
     ca-certificates \
