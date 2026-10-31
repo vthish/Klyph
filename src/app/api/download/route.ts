@@ -168,14 +168,16 @@ export async function GET(req: NextRequest) {
       const height = heightMatch ? parseInt(heightMatch[1], 10) : 1080;
       const isLowRes = height <= 480;
 
-      // Route all YouTube streams (video and audio) through the Cloudflare Worker 8MB Range-Chunking engine
-      // to eliminate Google Video's playback rate throttling across all resolutions (144p to 8K)
-      const isAlreadyProxied = (u: string) => u.startsWith(cfWorkerBase);
-      const streamVideoUrl = (isYouTube && !isAlreadyProxied(targetUrl))
-        ? `${cfWorkerBase}/?url=${encodeURIComponent(targetUrl)}`
+      // ⚡ Connect to internal 5MB Range-Chunking Stream Engine on loopback
+      // Eliminates Google Video 34 KB/s throttling across all resolutions (144p to 8K)
+      const localPort = process.env.PORT || 3000;
+      const internalStreamBase = `http://127.0.0.1:${localPort}/api/stream`;
+      
+      const streamVideoUrl = isYouTube
+        ? `${internalStreamBase}?url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
-      const streamAudioUrl = (isYouTube && audioUrl && !isAlreadyProxied(audioUrl))
-        ? `${cfWorkerBase}/?url=${encodeURIComponent(audioUrl)}`
+      const streamAudioUrl = (isYouTube && audioUrl)
+        ? `${internalStreamBase}?url=${encodeURIComponent(audioUrl)}`
         : audioUrl;
 
       const ffmpegArgs = [
