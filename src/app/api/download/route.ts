@@ -70,10 +70,10 @@ function cleanOldTempFiles() {
           if (now - stat.mtimeMs > 10 * 60 * 1000) {
             fs.unlinkSync(p);
           }
-        } catch (_) {}
+        } catch (_) { }
       }
     }
-  } catch (_) {}
+  } catch (_) { }
 }
 
 export async function GET(req: NextRequest) {
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
       setTimeout(() => {
         try {
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        } catch (_) {}
+        } catch (_) { }
       }, 15000);
     });
 
@@ -168,18 +168,55 @@ export async function GET(req: NextRequest) {
       const height = heightMatch ? parseInt(heightMatch[1], 10) : 1080;
       const isLowRes = height <= 480;
 
+      // ⚡ HUGGING FACE ACCELERATOR ENGINE
+      // For YouTube video formats requiring muxing (144p to 8K):
+      // Offload parallel dual-stream download (aria2c 16-threads) and muxing to Hugging Face Space.
+      // Redirects directly (302) to HF high-speed CDN, saving 100% of Render RAM and egress!
+      const hfEngineUrl = process.env.HF_ENGINE_URL || 'https://venu17-klyph-engine.hf.space';
+      if (isYouTube) {
+        try {
+          const initRes = await fetch(`${hfEngineUrl}/gradio_api/call/process_video`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: [targetUrl, resolution || '1080p', cleanFilename, audioUrl]
+            }),
+            signal: AbortSignal.timeout(45000)
+          });
+
+          if (initRes.ok) {
+            const initJson = await initRes.json();
+            const eventId = initJson.event_id;
+            if (eventId) {
+              const streamRes = await fetch(`${hfEngineUrl}/gradio_api/call/process_video/${eventId}`, {
+                signal: AbortSignal.timeout(90000)
+              });
+
+              if (streamRes.ok) {
+                const streamText = await streamRes.text();
+                const match = streamText.match(/"url"\s*:\s*"([^"]+)"/);
+                if (match && match[1]) {
+                  const directDownloadUrl = match[1];
+                  return NextResponse.redirect(directDownloadUrl, 302);
+                }
+              }
+            }
+          }
+        } catch (hfErr) {
+          console.warn('[HF Engine Fallback] Falling back to local FFmpeg stream-muxing:', hfErr);
+        }
+      }
+
       // For YouTube low-bitrate formats (144p, 240p, 480p), Google Video heavily throttles
       // unchunked TCP connections to 10-50 KB/s. Routing through Cloudflare Edge Worker
       // bypasses this throttling and delivers unthrottled streaming chunks to FFmpeg at maximum speed!
       // High-res formats (720p, 1080p, 1440p, 2160p, 4320p) are already fast and unthrottled,
       // so they connect directly to maintain their proven speed and stability.
       const isAlreadyProxied = (u: string) => u.startsWith(cfWorkerBase);
-      // Route all YouTube streams through the Cloudflare Worker 8MB Range-Chunking engine
-      // to eliminate Google Video's playback rate throttling across all resolutions (144p to 8K)
-      const streamVideoUrl = (isYouTube && !isAlreadyProxied(targetUrl))
+      const streamVideoUrl = (isYouTube && isLowRes && !isAlreadyProxied(targetUrl))
         ? `${cfWorkerBase}/?url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
-      const streamAudioUrl = (isYouTube && audioUrl && !isAlreadyProxied(audioUrl))
+      const streamAudioUrl = (isYouTube && isLowRes && audioUrl && !isAlreadyProxied(audioUrl))
         ? `${cfWorkerBase}/?url=${encodeURIComponent(audioUrl)}`
         : audioUrl;
 
@@ -215,7 +252,7 @@ export async function GET(req: NextRequest) {
       const ffmpegProc = spawn(ffmpegPath, ffmpegArgs);
 
       req.signal.addEventListener('abort', () => {
-        try { ffmpegProc.kill('SIGKILL'); } catch (_) {}
+        try { ffmpegProc.kill('SIGKILL'); } catch (_) { }
       });
 
       ffmpegProc.stderr.on('data', (d) => {
@@ -382,15 +419,15 @@ export async function GET(req: NextRequest) {
             const files = fs.readdirSync(tempDir);
             for (const f of files) {
               if (f.startsWith(tempId)) {
-                try { fs.unlinkSync(path.join(tempDir, f)); } catch (_) {}
+                try { fs.unlinkSync(path.join(tempDir, f)); } catch (_) { }
               }
             }
-          } catch (_) {}
+          } catch (_) { }
         };
 
         fileStream.on('close', cleanupTemp);
         req.signal.addEventListener('abort', () => {
-          try { fileStream.destroy(); } catch (_) {}
+          try { fileStream.destroy(); } catch (_) { }
           cleanupTemp();
         });
 
@@ -408,7 +445,7 @@ export async function GET(req: NextRequest) {
             fs.unlinkSync(path.join(tempDir, f));
           }
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 
@@ -565,8 +602,8 @@ export async function POST(req: NextRequest) {
     // 2. Keepalive heartbeat every 2 seconds to keep connection indefinitely alive
     const heartbeat = setInterval(() => {
       try {
-        writer.write(encoder.encode(JSON.stringify({ status: 'progress', message: 'Accelerating chunks...' }) + '\n')).catch(() => {});
-      } catch (_) {}
+        writer.write(encoder.encode(JSON.stringify({ status: 'progress', message: 'Accelerating chunks...' }) + '\n')).catch(() => { });
+      } catch (_) { }
     }, 2000);
 
     const ytdlpProc = spawn(pythonCmd, ytdlpArgs);
@@ -575,7 +612,7 @@ export async function POST(req: NextRequest) {
       try {
         clearInterval(heartbeat);
         ytdlpProc.kill('SIGKILL');
-      } catch (_) {}
+      } catch (_) { }
     });
 
     const handleProgress = (data: Buffer) => {
@@ -589,8 +626,8 @@ export async function POST(req: NextRequest) {
       if (match && match[1]) {
         const pct = parseFloat(match[1]);
         try {
-          writer.write(encoder.encode(JSON.stringify({ status: 'progress', percent: pct }) + '\n')).catch(() => {});
-        } catch (_) {}
+          writer.write(encoder.encode(JSON.stringify({ status: 'progress', percent: pct }) + '\n')).catch(() => { });
+        } catch (_) { }
       }
     };
 
@@ -604,7 +641,7 @@ export async function POST(req: NextRequest) {
         try {
           await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Download engine error' }) + '\n'));
           await writer.close();
-        } catch (_) {}
+        } catch (_) { }
         return;
       }
 
@@ -639,7 +676,7 @@ export async function POST(req: NextRequest) {
         try {
           await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message || 'Processing failed' }) + '\n'));
           await writer.close();
-        } catch (_) {}
+        } catch (_) { }
       }
     });
 
@@ -648,7 +685,7 @@ export async function POST(req: NextRequest) {
       try {
         await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message }) + '\n'));
         await writer.close();
-      } catch (_) {}
+      } catch (_) { }
     });
 
     return new Response(readable, {
