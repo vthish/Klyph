@@ -164,18 +164,6 @@ export async function GET(req: NextRequest) {
         referer = 'https://www.tiktok.com/';
       }
 
-      const cfWorkerBase = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
-      const isAlreadyProxied = (u: string) => u.startsWith(cfWorkerBase);
-
-      // ⚡ Route YouTube video and audio through Cloudflare Worker 8MB Range-Chunking engine
-      // Completely eliminates Google Video's 110 KB/s playback rate limit, giving 3-10 MB/s full speed!
-      const streamVideoUrl = (isYouTube && !isAlreadyProxied(targetUrl))
-        ? `${cfWorkerBase}/?url=${encodeURIComponent(targetUrl)}`
-        : targetUrl;
-      const streamAudioUrl = (isYouTube && audioUrl && !isAlreadyProxied(audioUrl))
-        ? `${cfWorkerBase}/?url=${encodeURIComponent(audioUrl)}`
-        : audioUrl;
-
       const ffmpegArgs = [
         '-hide_banner',
         '-loglevel', 'warning',
@@ -183,17 +171,18 @@ export async function GET(req: NextRequest) {
         '-reconnect_streamed', '1',
         '-reconnect_at_eof', '1',
         '-reconnect_delay_max', '5',
-        '-i', streamVideoUrl,
+        '-headers', `User-Agent: ${userAgent}\r\nReferer: ${referer}\r\n`,
+        '-i', targetUrl,
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_at_eof', '1',
         '-reconnect_delay_max', '5',
-        '-i', streamAudioUrl,
+        '-headers', `User-Agent: ${userAgent}\r\nReferer: ${referer}\r\n`,
+        '-i', audioUrl,
         '-map', '0:v:0',
         '-map', '1:a:0?',
         '-c:v', 'copy',
         '-c:a', 'copy',
-        '-strict', '-2',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         '-shortest',
         '-f', 'mp4',
