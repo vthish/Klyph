@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
   // 2. INSTANT STREAM-MUXING ENGINE (Facebook HD, Instagram Reels)
   // When both video (targetUrl) and audio (audioUrl) streams are available for non-YouTube platforms,
   // mux and stream them immediately via FFmpeg pipe. Meta CDNs do not throttle unchunked requests!
-  if (audioUrl && targetUrl && type !== 'audio' && platform !== 'youtube') {
+  if (audioUrl && targetUrl && type !== 'audio') {
     try {
       const ffmpegPath = resolveFfmpegPath();
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -397,7 +397,7 @@ export async function GET(req: NextRequest) {
 
   // For NON-YOUTUBE formats (TikTok, Instagram, Facebook):
   // They are not IP-locked, so redirecting to the Cloudflare Worker gives optimal edge performance!
-  if (!isYouTubeTarget && cfWorkerUrl && targetUrl) {
+  if (cfWorkerUrl && targetUrl) {
     return NextResponse.redirect(`${cfWorkerUrl}/?url=${encodeURIComponent(targetUrl)}&filename=${encodeURIComponent(cleanFilename)}`);
   }
 
