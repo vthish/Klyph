@@ -174,10 +174,12 @@ export async function GET(req: NextRequest) {
       // High-res formats (720p, 1080p, 1440p, 2160p, 4320p) are already fast and unthrottled,
       // so they connect directly to maintain their proven speed and stability.
       const isAlreadyProxied = (u: string) => u.startsWith(cfWorkerBase);
-      const streamVideoUrl = (isYouTube && isLowRes && !isAlreadyProxied(targetUrl))
+      // Route all YouTube streams through the Cloudflare Worker 8MB Range-Chunking engine
+      // to eliminate Google Video's playback rate throttling across all resolutions (144p to 8K)
+      const streamVideoUrl = (isYouTube && !isAlreadyProxied(targetUrl))
         ? `${cfWorkerBase}/?url=${encodeURIComponent(targetUrl)}`
         : targetUrl;
-      const streamAudioUrl = (isYouTube && isLowRes && audioUrl && !isAlreadyProxied(audioUrl))
+      const streamAudioUrl = (isYouTube && audioUrl && !isAlreadyProxied(audioUrl))
         ? `${cfWorkerBase}/?url=${encodeURIComponent(audioUrl)}`
         : audioUrl;
 
