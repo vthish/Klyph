@@ -112,7 +112,7 @@ export default function Downloader() {
 
     let downloadEndpoint = '';
     if (needsMuxing) {
-      // Muxed via server FFmpeg instant stream (YouTube 1080p/4K/8K, Facebook HD, Instagram Reels)
+      // Muxed via server FFmpeg instant stream accelerated through Cloudflare Edge Worker
       const params = new URLSearchParams();
       params.set('url', format.url);
       params.set('audioUrl', format.audioUrl!);
@@ -122,7 +122,9 @@ export default function Downloader() {
       if (format.resolution) params.set('resolution', format.resolution);
       if (format.type) params.set('type', format.type);
 
-      downloadEndpoint = `/api/download?${params.toString()}`;
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.auto-ledger.tech';
+      const directUrl = `${origin}/api/download?${params.toString()}`;
+      downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
     } else {
       // Direct stream via Cloudflare Worker Edge Proxy (Instant 0.2s start & 0 MB Render RAM usage!)
       // Handles YouTube 360p, YouTube Audio Only, TikTok, Instagram, Facebook
