@@ -12,7 +12,6 @@ import {
   Video, 
   CheckCircle2, 
   AlertCircle,
-  Sparkles,
   HelpCircle
 } from 'lucide-react';
 import { VideoMetadata, VideoFormat, detectPlatform, AppError } from '@/lib/types';

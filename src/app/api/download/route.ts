@@ -511,12 +511,12 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
 
     // 1. Send instant initial chunk (TTFB < 10ms - completely satisfies proxy timeout!)
-    writer.write(encoder.encode(JSON.stringify({ status: 'started', message: 'Engine accelerating...' }) + '\n'));
+    await writer.write(encoder.encode(JSON.stringify({ status: 'started', message: 'Engine accelerating...' }) + '\n'));
 
     // 2. Keepalive heartbeat every 2 seconds to keep connection indefinitely alive
     const heartbeat = setInterval(() => {
       try {
-        writer.write(encoder.encode(JSON.stringify({ status: 'progress', message: 'Accelerating chunks...' }) + '\n'));
+        writer.write(encoder.encode(JSON.stringify({ status: 'progress', message: 'Accelerating chunks...' }) + '\n')).catch(() => {});
       } catch (_) {}
     }, 2000);
 
@@ -535,7 +535,7 @@ export async function POST(req: NextRequest) {
       if (match && match[1]) {
         const pct = parseFloat(match[1]);
         try {
-          writer.write(encoder.encode(JSON.stringify({ status: 'progress', percent: pct }) + '\n'));
+          writer.write(encoder.encode(JSON.stringify({ status: 'progress', percent: pct }) + '\n')).catch(() => {});
         } catch (_) {}
       }
     };
@@ -548,7 +548,7 @@ export async function POST(req: NextRequest) {
 
       if (code !== 0) {
         try {
-          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Download engine error' }) + '\n'));
+          await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Download engine error' }) + '\n'));
           await writer.close();
         } catch (_) {}
         return;
@@ -565,7 +565,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (!producedFile || !fs.existsSync(producedFile)) {
-          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Produced file missing' }) + '\n'));
+          await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: 'Produced file missing' }) + '\n'));
           await writer.close();
           return;
         }
@@ -574,7 +574,7 @@ export async function POST(req: NextRequest) {
         const finalFilename = cleanFilename.toLowerCase().endsWith(`.${actualExt}`) ? cleanFilename : `${cleanFilename}.${actualExt}`;
         const baseName = path.basename(producedFile);
 
-        writer.write(encoder.encode(JSON.stringify({
+        await writer.write(encoder.encode(JSON.stringify({
           status: 'ready',
           fileId: baseName,
           filename: finalFilename,
@@ -583,7 +583,7 @@ export async function POST(req: NextRequest) {
         await writer.close();
       } catch (err: any) {
         try {
-          writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message || 'Processing failed' }) + '\n'));
+          await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message || 'Processing failed' }) + '\n'));
           await writer.close();
         } catch (_) {}
       }
@@ -592,7 +592,7 @@ export async function POST(req: NextRequest) {
     ytdlpProc.on('error', async (err) => {
       clearInterval(heartbeat);
       try {
-        writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message }) + '\n'));
+        await writer.write(encoder.encode(JSON.stringify({ status: 'error', message: err.message }) + '\n'));
         await writer.close();
       } catch (_) {}
     });
