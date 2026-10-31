@@ -233,7 +233,7 @@ export async function GET(req: NextRequest) {
       '--geo-bypass',
       '--js-runtimes', 'node',
       '--http-chunk-size', '10M',
-      '--concurrent-fragments', '4',
+      '--concurrent-fragments', '8',
     ];
 
     if (ffmpegPath && ffmpegPath !== 'ffmpeg' && fs.existsSync(ffmpegPath)) {
@@ -468,7 +468,8 @@ export async function POST(req: NextRequest) {
       '--geo-bypass',
       '--js-runtimes', 'node',
       '--http-chunk-size', '10M',
-      '--concurrent-fragments', '4',
+      '--concurrent-fragments', '8',
+      '--progress',
       '--newline',
     ];
 
