@@ -145,10 +145,93 @@ export async function GET(req: NextRequest) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  const isYouTube = platform === 'youtube' || targetUrl.includes('googlevideo.com') || (audioUrl ? audioUrl.includes('googlevideo.com') : false);
+
   // 2. INSTANT STREAM-MUXING ENGINE (Facebook HD, Instagram Reels)
   // When both video (targetUrl) and audio (audioUrl) streams are available for non-YouTube platforms,
   // mux and stream them immediately via FFmpeg pipe. Meta CDNs do not throttle unchunked requests!
   if (audioUrl && targetUrl && type !== 'audio') {
+    // ⚡ ULTRA-SPEED ARIA2 PARALLEL DUAL-STREAM ENGINE FOR YOUTUBE
+    // Google Video severely throttles continuous streams to ~34 KB/s.
+    // aria2c downloads both streams in parallel with 16 connections using Range slices at Render's full 1 Gbps line speed,
+    // then FFmpeg muxes them in < 1 second and streams the finished file with exact Content-Length!
+    if (isYouTube && hasAria2()) {
+      try {
+        const tempId = `klyph_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        const tempDir = os.tmpdir();
+        const vidFile = path.join(tempDir, `${tempId}_v.mp4`);
+        const audFile = path.join(tempDir, `${tempId}_a.m4a`);
+        const finalFile = path.join(tempDir, `${tempId}.mp4`);
+
+        const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+        const ariaVidArgs = [
+          '-x', '16', '-s', '16', '-k', '5M', '-j', '16',
+          '--file-allocation=none', '--allow-overwrite=true',
+          `--user-agent=${ua}`,
+          '--header=Referer: https://www.youtube.com/',
+          '-o', path.basename(vidFile),
+          '-d', tempDir,
+          targetUrl
+        ];
+        const ariaAudArgs = [
+          '-x', '16', '-s', '16', '-k', '5M', '-j', '16',
+          '--file-allocation=none', '--allow-overwrite=true',
+          `--user-agent=${ua}`,
+          '--header=Referer: https://www.youtube.com/',
+          '-o', path.basename(audFile),
+          '-d', tempDir,
+          audioUrl
+        ];
+
+        await Promise.all([
+          execFileAsync('aria2c', ariaVidArgs, { timeout: 60000 }),
+          execFileAsync('aria2c', ariaAudArgs, { timeout: 60000 })
+        ]);
+
+        const resolvedFfmpeg = resolveFfmpegPath();
+        await execFileAsync(resolvedFfmpeg, [
+          '-y',
+          '-i', vidFile,
+          '-i', audFile,
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-movflags', '+faststart',
+          finalFile
+        ], { timeout: 30000 });
+
+        try { fs.unlinkSync(vidFile); } catch (_) {}
+        try { fs.unlinkSync(audFile); } catch (_) {}
+
+        if (fs.existsSync(finalFile)) {
+          const stat = fs.statSync(finalFile);
+          const downloadName = cleanFilename.toLowerCase().endsWith('.mp4') ? cleanFilename : `${cleanFilename}.mp4`;
+
+          const headers = new Headers();
+          headers.set('Content-Type', 'video/mp4');
+          headers.set('Content-Length', stat.size.toString());
+          headers.set('Content-Disposition', buildContentDisposition(downloadName, 'mp4'));
+          headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+          headers.set('Accept-Ranges', 'bytes');
+
+          const fileStream = fs.createReadStream(finalFile);
+          fileStream.on('close', () => {
+            setTimeout(() => {
+              try { if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile); } catch (_) {}
+            }, 15000);
+          });
+
+          return new Response(Readable.toWeb(fileStream) as any, {
+            status: 200,
+            headers
+          });
+        }
+      } catch (ariaErr) {
+        console.warn('[Aria2 Fast Engine Fallback]:', ariaErr);
+      }
+    }
+
     try {
       const ffmpegPath = resolveFfmpegPath();
       const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
