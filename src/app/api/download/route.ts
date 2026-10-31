@@ -162,6 +162,25 @@ export async function GET(req: NextRequest) {
         referer = 'https://www.tiktok.com/';
       }
 
+      const cfWorkerBase = process.env.NEXT_PUBLIC_CF_WORKER_URL || 'https://klyph-stream.venushathishan06.workers.dev';
+      const isYouTube = platform === 'youtube' || targetUrl.includes('googlevideo.com') || (audioUrl ? audioUrl.includes('googlevideo.com') : false);
+      const heightMatch = resolution.match(/(\d+)p?/);
+      const height = heightMatch ? parseInt(heightMatch[1], 10) : 1080;
+      const isLowRes = height <= 480;
+
+      // For YouTube low-bitrate formats (144p, 240p, 480p), Google Video heavily throttles
+      // unchunked TCP connections to 10-50 KB/s. Routing through Cloudflare Edge Worker
+      // bypasses this throttling and delivers unthrottled streaming chunks to FFmpeg at maximum speed!
+      // High-res formats (720p, 1080p, 1440p, 2160p, 4320p) are already fast and unthrottled,
+      // so they connect directly to maintain their proven speed and stability.
+      const isAlreadyProxied = (u: string) => u.startsWith(cfWorkerBase);
+      const streamVideoUrl = (isYouTube && isLowRes && !isAlreadyProxied(targetUrl))
+        ? `${cfWorkerBase}/?url=${encodeURIComponent(targetUrl)}`
+        : targetUrl;
+      const streamAudioUrl = (isYouTube && isLowRes && audioUrl && !isAlreadyProxied(audioUrl))
+        ? `${cfWorkerBase}/?url=${encodeURIComponent(audioUrl)}`
+        : audioUrl;
+
       const ffmpegArgs = [
         '-hide_banner',
         '-loglevel', 'warning',
@@ -171,19 +190,19 @@ export async function GET(req: NextRequest) {
         '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
         '-headers', `Referer: ${referer}\r\n`,
-        '-i', targetUrl,
+        '-i', streamVideoUrl,
         '-reconnect', '1',
         '-reconnect_streamed', '1',
         '-reconnect_at_eof', '1',
         '-reconnect_delay_max', '5',
         '-user_agent', userAgent,
         '-headers', `Referer: ${referer}\r\n`,
-        '-i', audioUrl,
+        '-i', streamAudioUrl,
         '-map', '0:v:0',
         '-map', '1:a:0?',
         '-c:v', 'copy',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-b:a', isLowRes ? '128k' : '192k',
         '-strict', '-2',
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         '-shortest',
