@@ -41,6 +41,7 @@ RUN npm run build
 
 # Set production environment and expose port (Railway binds via $PORT)
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 EXPOSE 3000
 
