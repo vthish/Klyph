@@ -35,6 +35,9 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
+  verification: {
+    google: 'nYu7oq92pJtS8_40KIR07-kjLk6aS1LlEMeQbZBitaU',
+  },
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' }
@@ -53,6 +56,7 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <meta name="google-site-verification" content="nYu7oq92pJtS8_40KIR07-kjLk6aS1LlEMeQbZBitaU" />
         <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
         <meta httpEquiv="Pragma" content="no-cache" />
         <meta httpEquiv="Expires" content="0" />
