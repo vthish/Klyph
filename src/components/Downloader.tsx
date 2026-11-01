@@ -22,6 +22,7 @@ export default function Downloader() {
   const [error, setError] = useState<AppError | null>(null);
   const [data, setData] = useState<VideoMetadata | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
   const detectedPlatform = detectPlatform(url);
 
@@ -94,8 +95,9 @@ export default function Downloader() {
     }
   };
 
-  const triggerDownload = (format: VideoFormat) => {
+  const triggerDownload = async (format: VideoFormat) => {
     setDownloadingId(format.id);
+    setDownloadStatus('Starting...');
     
     const rawTitle = data?.title || 'video';
     // Clean illegal filename characters while preserving human-readable title and spaces
@@ -110,37 +112,74 @@ export default function Downloader() {
     // Only video formats that have a separate audio stream (DASH formats) require FFmpeg stream muxing
     const needsMuxing = Boolean(format.audioUrl) && format.type !== 'audio';
 
-    let downloadEndpoint = '';
-    if (needsMuxing) {
-      // Muxed via server FFmpeg instant stream accelerated through Cloudflare Edge Worker
-      const params = new URLSearchParams();
-      params.set('url', format.url);
-      params.set('audioUrl', format.audioUrl!);
-      params.set('filename', downloadFilename);
-      params.set('platform', data?.platform || 'unknown');
-      if (format.id) params.set('formatId', format.id);
-      if (format.resolution) params.set('resolution', format.resolution);
-      if (format.type) params.set('type', format.type);
+    const triggerNative = (endpoint: string) => {
+      const a = document.createElement('a');
+      a.href = endpoint;
+      a.setAttribute('download', downloadFilename);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => {
+        setDownloadingId(null);
+        setDownloadStatus(null);
+      }, 3000);
+    };
 
-      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.auto-ledger.tech';
-      const directUrl = `${origin}/api/download?${params.toString()}`;
-      downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
-    } else {
+    if (!needsMuxing) {
       // Direct stream via Cloudflare Worker Edge Proxy (Instant 0.2s start & 0 MB Render RAM usage!)
       // Handles YouTube 360p, YouTube Audio Only, TikTok, Instagram, Facebook
-      downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+      const downloadEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(format.url)}&filename=${encodeURIComponent(downloadFilename)}`;
+      triggerNative(downloadEndpoint);
+      return;
     }
 
-    const a = document.createElement('a');
-    a.href = downloadEndpoint;
-    a.setAttribute('download', downloadFilename);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // High-Resolution Muxed Format (720p, 1080p, 4K, 8K)
+    // ⚡ Try Y2Mate-style High-Speed Hugging Face Accelerator Engine first:
+    // Aria2c downloads both streams in parallel and FFmpeg packages them into high-speed static MP4 in ~5-10s!
+    setDownloadStatus('⚡ Converting high-speed...');
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000);
 
-    setTimeout(() => {
-      setDownloadingId(null);
-    }, 4000);
+      const accRes = await fetch('/api/accelerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: format.url,
+          audioUrl: format.audioUrl,
+          resolution: format.resolution || format.quality,
+          filename: downloadFilename,
+          platform: data?.platform
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const accData = await accRes.json();
+      if (accData.success && accData.downloadUrl) {
+        setDownloadStatus('Downloading ⚡');
+        triggerNative(accData.downloadUrl);
+        return;
+      }
+    } catch (accErr) {
+      console.warn('[Downloader Accelerate Fallback]:', accErr);
+    }
+
+    // Fallback: If HF accelerator is busy or times out, seamlessly use direct stream
+    setDownloadStatus('Streaming...');
+    const params = new URLSearchParams();
+    params.set('url', format.url);
+    params.set('audioUrl', format.audioUrl!);
+    params.set('filename', downloadFilename);
+    params.set('platform', data?.platform || 'unknown');
+    if (format.id) params.set('formatId', format.id);
+    if (format.resolution) params.set('resolution', format.resolution);
+    if (format.type) params.set('type', format.type);
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.auto-ledger.tech';
+    const directUrl = `${origin}/api/download?${params.toString()}`;
+    const fallbackEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
+    triggerNative(fallbackEndpoint);
   };
 
   return (
@@ -319,7 +358,7 @@ export default function Downloader() {
                       {fmt.quality}
                     </span>
                     <span className="format-type">
-                      {fmt.ext.toUpperCase()} {fmt.filesize ? `• ${fmt.filesize}` : ''}
+                      {downloadingId === fmt.id && downloadStatus ? downloadStatus : `${fmt.ext.toUpperCase()} ${fmt.filesize ? `• ${fmt.filesize}` : ''}`}
                     </span>
                   </div>
 
