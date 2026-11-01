@@ -3,12 +3,14 @@
 
 # ⚡ KLYPH
 
-### Next-Gen Universal Video & Audio Downloader
+### Next-Gen Hybrid Multi-Cloud Video & Audio Downloader
 
-**An ultra-fast, modern, ad-free web platform engineered to extract and download high-definition media from YouTube, TikTok, Instagram, and Facebook.**
+**An ultra-fast, modern, ad-free web platform engineered to extract, accelerate, and download high-definition media from YouTube, TikTok, Instagram, and Facebook at full line speed.**
 
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Edge_Worker-F38020?style=for-the-badge&logo=cloudflare)](https://workers.cloudflare.com/)
+[![Hugging Face](https://img.shields.io/badge/Hugging_Face-ZeroGPU_Engine-FFD21E?style=for-the-badge&logo=huggingface)](https://huggingface.co/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)](https://www.docker.com/)
 [![Python](https://img.shields.io/badge/Python-yt--dlp-3776AB?style=for-the-badge&logo=python)](https://github.com/yt-dlp/yt-dlp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
@@ -35,13 +37,14 @@
 
 ## 💡 Why Klyph?
 
-Traditional online video downloaders are bloated with intrusive pop-up advertisements, malicious redirects, captchas, and forced low-resolution limits. 
+Traditional online video downloaders are bloated with intrusive pop-up advertisements, malicious redirects, captchas, and forced low-resolution limits. Even worse, single-server downloaders suffer from RAM crashes and throttled 100 KB/s playback streams on high-resolution formats like 1080p and 4K.
 
-**Klyph** was engineered from the ground up to solve this:
-- **Zero Ads & Zero Pop-ups:** Clean, distraction-free interface.
-- **Full Quality Preservation:** Downloads raw streams directly without re-compression degradation.
-- **Accurate Real-Time Sizing:** Calculates and displays exact file sizes in **KB, MB, or GB** for every available resolution before you click download.
-- **High-Speed Resumable Downloads:** Built-in streaming reverse proxy with HTTP `Range` header support.
+**Klyph** was re-architected with a **Hybrid Multi-Cloud Pipeline** to completely eliminate these bottlenecks:
+- **Zero Ads & Zero Pop-ups:** Clean, distraction-free glassmorphic interface.
+- **⚡ Y2Mate-Style High-Speed Acceleration:** 1080p, 4K, and 8K videos are prepared in seconds using 32 parallel Aria2c threads on Hugging Face ZeroGPU and delivered with exact `Content-Length` at full ISP bandwidth (10–50 MB/s+).
+- **🚀 0-RAM Edge Delivery:** Non-muxed formats (360p, MP3, TikTok, IG, FB) stream directly through Cloudflare Edge workers with 0 MB server RAM consumption and under 200ms start time.
+- **Accurate Real-Time Sizing:** Calculates and displays exact file sizes in **KB, MB, or GB** for every available resolution before clicking download.
+- **High-Speed Resumable Downloads:** Built-in streaming reverse proxy with complete HTTP `Range` header and multi-connection chunking support.
 
 ---
 
@@ -49,48 +52,55 @@ Traditional online video downloaders are bloated with intrusive pop-up advertise
 
 | Platform | Supported Resolutions & Media Types | Key Capabilities |
 | :--- | :--- | :--- |
-| **YouTube** | **4K Ultra HD (2160p)**, **2K Quad HD (1440p)**, **1080p Full HD**, **720p HD**, **480p**, **360p**, **Dedicated MP3 Audio** | Multi-client rotation (`web_embedded` + `tv samsung`), shorts support, and automatic JS challenge solver. |
+| **YouTube** | **8K (4320p)**, **4K Ultra HD (2160p)**, **2K Quad HD (1440p)**, **1080p Full HD**, **720p HD**, **480p**, **360p**, **Dedicated MP3 Audio** | Multi-client rotation (`web_embedded` + `tv samsung`), zero watermark, automatic JS challenge solver, and Hugging Face Aria2c acceleration. |
 | **TikTok** | **1080p HD (No Watermark)**, **720p HD (Original)**, **Audio Only (MP3)** | Powered by dedicated TikWM integration with zero watermark retention. |
-| **Instagram** | **1080p / 720p Reels**, **Video Posts**, **Carousels** | High-speed direct media link resolution. |
+| **Instagram** | **1080p / 720p Reels**, **Video Posts**, **Carousels** | High-speed direct media link resolution via Cloudflare Edge. |
 | **Facebook** | **HD 1080p**, **SD Videos** | Handles public posts, reels, and video clips seamlessly. |
 
 ### Additional Capabilities
 - 📊 **Dynamic File Size Formatting:** Small audio files show in `KB`, standard videos in `MB`, and large 4K streams scale smoothly to `GB` (e.g. `1.25 GB`).
-- ⚡ **HTTP Range-Header Streaming Proxy:** The `/api/download` route pipes chunks directly from the edge, enabling browser pause, resume, and multi-threaded acceleration.
+- ⚡ **Multi-Cloud Acceleration Engine:** High-resolution DASH formats utilize remote 16-thread video & audio parallel chunking on Hugging Face, avoiding free-tier 512MB RAM limits.
 - 🛡️ **Automated Cookie Sanitizer:** Built-in parser supporting standard Netscape format, Base64 strings, and auto-repair for broken whitespace/tabs.
-- 📱 **Cyberpunk Glassmorphism UI:** Mobile-first responsive design featuring deep dark palettes (`#07090e`), glowing neon cyan accents, and micro-interactions.
+- 📱 **Cyberpunk Glassmorphism UI:** Mobile-first responsive design featuring deep dark palettes (`#07090e`), glowing neon cyan accents, and real-time status micro-interactions (`⚡ Converting high-speed...`).
 
 ---
 
-## 🛠️ Architecture & Tech Stack
+## 🛠️ Hybrid Multi-Cloud Architecture
 
 ```mermaid
 flowchart TD
-    User["🌐 User Browser (Client)"]
-    CF["☁️ Cloudflare Edge / SSL (klyph.auto-ledger.tech)"]
-    Next["▲ Next.js 14 App Server (Docker Container)"]
-    FetchAPI["/api/fetch (Metadata Route)"]
-    DownloadAPI["/api/download (Streaming Proxy)"]
-    Engine["🐍 Python yt-dlp + yt-dlp-ejs Engine"]
-    TikWM["📱 TikWM API Engine"]
-    Platforms["🎥 YouTube / TikTok / Instagram / Facebook CDN"]
+    User["📱 User (Browser / Mobile Phone)"]
+    CF["☁️ Cloudflare Edge Worker"]
+    Render["▲ Next.js Web Service on Render (klyph.auto-ledger.tech)"]
+    FetchAPI["/api/fetch (Metadata Extractor)"]
+    AccAPI["/api/accelerate (High-Speed Dispatcher)"]
+    HF["🤖 Hugging Face ZeroGPU Engine (Aria2c + FFmpeg)"]
+    CDNs["🎥 YouTube / TikTok / Meta CDNs"]
 
-    User --> CF --> Next
-    Next --> FetchAPI
-    Next --> DownloadAPI
-    FetchAPI -->|TikTok| TikWM
-    FetchAPI -->|YouTube / IG / FB| Engine
-    Engine --> Platforms
-    DownloadAPI -->|HTTP Range Requests| Platforms
+    User -->|1. Paste Link & Fetch| Render
+    Render --> FetchAPI
+    FetchAPI -->|yt-dlp Extraction| CDNs
+
+    %% Direct Route
+    User -.->|2a. Direct Formats: 360p, MP3, TikTok, IG, FB| CF
+    CF -.->|Instant 0.2s Stream with 0 MB RAM| CDNs
+
+    %% High-Res Accelerated Route
+    User -->|2b. High-Res Formats: 720p, 1080p, 4K, 8K| AccAPI
+    AccAPI -->|3. Parallel Download Job| HF
+    HF -->|Aria2c 32 Threads & Instant Copy Mux| CDNs
+    HF -->|4. Static MP4 with exact Content-Length| AccAPI
+    AccAPI -->|5. High-Speed Download URL| User
+    User -->|6. Full Line Speed Multi-Connection Download| CF
 ```
 
 ### Technology Breakdown
-- **Frontend:** [Next.js 14](https://nextjs.org/) (App Router), React 18, TypeScript, [Lucide React](https://lucide.dev/)
-- **Backend & APIs:** Next.js Route Handlers (`/api/fetch`, `/api/download`)
+- **Frontend & App Gateway:** [Next.js 14](https://nextjs.org/) (App Router), React 18, TypeScript, [Lucide React](https://lucide.dev/)
+- **Hosting & Web Services:** [Render](https://render.com/) Web Service, Automated Continuous Deployment
+- **Edge Acceleration & CDN:** [Cloudflare Workers](https://workers.cloudflare.com/) (Edge routing, custom headers, Range passthrough)
+- **High-Performance Muxing Engine:** [Hugging Face Spaces](https://huggingface.co/) (ZeroGPU, 16 GB RAM, Aria2c multi-thread downloader, FFmpeg copy-muxing)
 - **Extraction Engine:** [yt-dlp](https://github.com/yt-dlp/yt-dlp), `yt-dlp-ejs`, [TikWM API](https://www.tikwm.com/)
-- **Runtimes:** Python 3.11, [Deno](https://deno.land/) & Node.js (for signature & n-challenge solving)
-- **Containerization:** Multi-stage Dockerfile based on `node:20-slim`
-- **Hosting & Infrastructure:** [Render](https://render.com/) Web Service, Cloudflare Edge DNS & Automated SSL
+- **Containerization:** Multi-stage Dockerfile based on `node:20-slim` with Node memory hardening
 
 ---
 
@@ -150,11 +160,13 @@ The app will be accessible at [http://localhost:3000](http://localhost:3000).
 
 ## ⚙️ Environment Variables
 
-| Variable | Description | Required |
-| :--- | :--- | :--- |
-| `PORT` | The port the Next.js server binds to (default: `3000`). | No |
-| `YOUTUBE_COOKIES` | Raw Netscape cookie content or Base64-encoded cookie file for YouTube extraction. | Optional (Recommended for Datacenter / Cloud IPs) |
-| `/etc/secrets/cookies.txt` | Render Secret Files path (automatically detected and prioritized). | Optional |
+| Variable | Description | Example / Default | Required |
+| :--- | :--- | :--- | :--- |
+| `PORT` | The port the Next.js server binds to (default: `3000`). | `3000` | No |
+| `NEXT_PUBLIC_CF_WORKER_URL` | Cloudflare Worker Edge Proxy URL for instant downloads and edge caching. | `https://your-worker-subdomain.workers.dev` | Optional |
+| `HF_ENGINE_URL` | Hugging Face Space accelerator endpoint for high-speed multi-threaded muxing. | `https://your-space-name.hf.space` | Optional |
+| `YOUTUBE_COOKIES` | Raw Netscape cookie content or Base64-encoded cookie file for YouTube extraction. | `-` | Optional (Recommended for Datacenter / Cloud IPs) |
+| `/etc/secrets/cookies.txt` | Render Secret Files path (automatically detected and prioritized). | `-` | Optional |
 
 ---
 
