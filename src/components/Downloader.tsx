@@ -349,7 +349,7 @@ export default function Downloader() {
                 <button
                   key={fmt.id}
                   onClick={() => triggerDownload(fmt)}
-                  className="format-btn"
+                  className={`format-btn ${downloadingId === fmt.id ? "is-downloading" : ""}`}
                   disabled={downloadingId === fmt.id}
                 >
                   <div className="format-label">

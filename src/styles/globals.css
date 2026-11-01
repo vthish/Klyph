@@ -626,9 +626,23 @@ body {
   transition: all 0.2s ease;
 }
 
-.format-btn:hover .format-action-icon {
+.format-btn:not(:disabled):not(.is-downloading):hover .format-action-icon {
   background: var(--accent-cyan);
   color: #07090e;
+}
+
+.format-btn:disabled,
+.format-btn.is-downloading {
+  cursor: wait;
+}
+
+.format-btn:disabled .format-action-icon,
+.format-btn:disabled:hover .format-action-icon,
+.format-btn.is-downloading .format-action-icon,
+.format-btn.is-downloading:hover .format-action-icon {
+  background: rgba(0, 242, 254, 0.12) !important;
+  color: var(--accent-cyan) !important;
+  border: 1px solid rgba(0, 242, 254, 0.3);
 }
 
 /* Feature Grid */

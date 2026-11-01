@@ -9,9 +9,32 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://klyph.onrender.com'),
   title: 'Klyph - Next-Gen Video Downloader (YouTube, TikTok, Instagram, FB)',
   description: 'Download HD & 4K videos and 320kbps MP3 audio from YouTube, TikTok (No Watermark), Instagram Reels, and Facebook with blazing speed.',
-  keywords: ['video downloader', 'youtube downloader', 'tiktok no watermark', 'instagram reels downloader', 'facebook video download', 'klyph'],
+  keywords: ['video downloader', 'youtube downloader', 'tiktok no watermark', 'instagram reels downloader', 'facebook video download', 'klyph', 'online video converter'],
+  alternates: {
+    canonical: 'https://klyph.onrender.com',
+  },
+  openGraph: {
+    title: 'Klyph - Next-Gen Video Downloader',
+    description: 'Download HD & 4K videos and 320kbps MP3 audio from YouTube, TikTok, Instagram, and Facebook with zero watermarks.',
+    url: 'https://klyph.onrender.com',
+    siteName: 'Klyph',
+    locale: 'en_US',
+    type: 'website',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
   icons: {
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' }
