@@ -786,3 +786,20 @@ body {
     gap: 12px 18px; 
   }
 }
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 0.85s linear infinite !important;
+}
+
+.text-cyan-400 {
+  color: #00f2fe !important;
+}
