@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
           audioUrl
         ]
       }),
-      signal: AbortSignal.timeout(35000)
+      signal: AbortSignal.timeout(180000)
     });
 
     if (!callRes.ok) {
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Stream SSE events until completed
     const sseRes = await fetch(`${hfBase}/gradio_api/call/process_video/${initData.event_id}`, {
-      signal: AbortSignal.timeout(35000)
+      signal: AbortSignal.timeout(180000)
     });
 
     if (!sseRes.ok || !sseRes.body) {

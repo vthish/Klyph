@@ -135,11 +135,17 @@ export default function Downloader() {
 
     // High-Resolution Muxed Format (720p, 1080p, 4K, 8K)
     // ⚡ Try Y2Mate-style High-Speed Hugging Face Accelerator Engine first:
-    // Aria2c downloads both streams in parallel and FFmpeg packages them into high-speed static MP4 in ~5-10s!
+    // Aria2c downloads both streams in parallel and FFmpeg packages them into high-speed static MP4!
     setDownloadStatus('⚡ Converting high-speed...');
+    
+    const progressTimer = setTimeout(() => {
+      setDownloadStatus('⚡ Packaging HD video...');
+    }, 12000);
+
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
+      // Allow up to 3 minutes (180s) for large videos to fully convert
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
 
       const accRes = await fetch('/api/accelerate', {
         method: 'POST',
@@ -154,6 +160,7 @@ export default function Downloader() {
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+      clearTimeout(progressTimer);
 
       const accData = await accRes.json();
       if (accData.success && accData.downloadUrl) {
@@ -162,6 +169,7 @@ export default function Downloader() {
         return;
       }
     } catch (accErr) {
+      clearTimeout(progressTimer);
       console.warn('[Downloader Accelerate Fallback]:', accErr);
     }
 
