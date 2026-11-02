@@ -176,7 +176,7 @@ export default function Downloader() {
     if (format.resolution) params.set('resolution', format.resolution);
     if (format.type) params.set('type', format.type);
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.auto-ledger.tech';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.onrender.com';
     const directUrl = `${origin}/api/download?${params.toString()}`;
     const fallbackEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
     triggerNative(fallbackEndpoint);
