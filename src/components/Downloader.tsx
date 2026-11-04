@@ -134,19 +134,11 @@ export default function Downloader() {
     }
 
     // High-Resolution Muxed Format (720p, 1080p, 4K, 8K)
-    // ⚡ Try Y2Mate-style High-Speed Hugging Face Accelerator Engine first:
-    // Aria2c downloads both streams in parallel and FFmpeg packages them into high-speed static MP4!
-    setDownloadStatus('⚡ Converting high-speed...');
-    
-    const progressTimer = setTimeout(() => {
-      setDownloadStatus('⚡ Packaging HD video...');
-    }, 12000);
+    // ⚡ Real-Time High-Speed Hugging Face Accelerator Engine:
+    // Tracks SSE heartbeats & progress in real-time so large 4K/HD videos never time out or prematurely abort to Render!
+    setDownloadStatus('⚡ Connecting to High-Speed Engine...');
 
     try {
-      const controller = new AbortController();
-      // Allow up to 3 minutes (180s) for large videos to fully convert
-      const timeoutId = setTimeout(() => controller.abort(), 180000);
-
       const accRes = await fetch('/api/accelerate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -156,38 +148,91 @@ export default function Downloader() {
           resolution: format.resolution || format.quality,
           filename: downloadFilename,
           platform: data?.platform
-        }),
-        signal: controller.signal
+        })
       });
-      clearTimeout(timeoutId);
-      clearTimeout(progressTimer);
 
-      const accData = await accRes.json();
-      if (accData.success && accData.downloadUrl) {
-        setDownloadStatus('Downloading ⚡');
-        triggerNative(accData.downloadUrl);
+      if (!accRes.ok) {
+        throw new Error(`Engine returned HTTP ${accRes.status}`);
+      }
+
+      const reader = accRes.body?.getReader();
+      if (!reader) throw new Error('No readable stream available');
+      const decoder = new TextDecoder();
+      let streamBuffer = '';
+      let isCompleted = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        streamBuffer += decoder.decode(value, { stream: true });
+        const events = streamBuffer.split('\n\n');
+        streamBuffer = events.pop() || '';
+
+        for (const rawEvent of events) {
+          const match = rawEvent.match(/^data:\s*(.+)$/m);
+          if (!match) continue;
+
+          try {
+            const ev = JSON.parse(match[1]);
+            if (ev.type === 'init' || ev.type === 'progress') {
+              if (ev.message) setDownloadStatus(ev.message);
+            } else if (ev.type === 'complete' && ev.downloadUrl) {
+              isCompleted = true;
+              setDownloadStatus('Downloading ⚡');
+              triggerNative(ev.downloadUrl);
+              return;
+            } else if (ev.type === 'error') {
+              throw new Error(ev.error || 'High-speed processing failed');
+            }
+          } catch (jsonErr: any) {
+            if (rawEvent.includes('"type":"error"')) {
+              throw jsonErr;
+            }
+          }
+        }
+      }
+
+      if (!isCompleted) {
+        throw new Error('Connection closed before video packaging completed');
+      }
+
+    } catch (accErr: any) {
+      console.warn('[Downloader Accelerate Fallback Check]:', accErr);
+
+      // Check if this is a large video (4K, 2K, 1080p, or > 250 MB)
+      const isLargeVideo = format.quality.includes('4K') || 
+                           format.quality.includes('2K') || 
+                           format.quality.includes('1080p') || 
+                           (format.filesize && (format.filesize.includes('GB') || parseFloat(format.filesize) > 250));
+
+      if (isLargeVideo) {
+        setError({
+          title: 'Engine Connection Interrupted',
+          message: 'The high-speed accelerator connection was interrupted while processing this large video.',
+          tip: 'Please click Download again. The engine will restart the download task.'
+        });
+        setDownloadingId(null);
+        setDownloadStatus(null);
         return;
       }
-    } catch (accErr) {
-      clearTimeout(progressTimer);
-      console.warn('[Downloader Accelerate Fallback]:', accErr);
+
+      // Small formats (e.g. 480p, 360p, or < 250 MB) seamlessly use direct stream fallback:
+      setDownloadStatus('Streaming...');
+      const params = new URLSearchParams();
+      params.set('url', format.url);
+      params.set('audioUrl', format.audioUrl!);
+      params.set('filename', downloadFilename);
+      params.set('platform', data?.platform || 'unknown');
+      if (format.id) params.set('formatId', format.id);
+      if (format.resolution) params.set('resolution', format.resolution);
+      if (format.type) params.set('type', format.type);
+
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.onrender.com';
+      const directUrl = `${origin}/api/download?${params.toString()}`;
+      const fallbackEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
+      triggerNative(fallbackEndpoint);
     }
-
-    // Fallback: If HF accelerator is busy or times out, seamlessly use direct stream
-    setDownloadStatus('Streaming...');
-    const params = new URLSearchParams();
-    params.set('url', format.url);
-    params.set('audioUrl', format.audioUrl!);
-    params.set('filename', downloadFilename);
-    params.set('platform', data?.platform || 'unknown');
-    if (format.id) params.set('formatId', format.id);
-    if (format.resolution) params.set('resolution', format.resolution);
-    if (format.type) params.set('type', format.type);
-
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://klyph.onrender.com';
-    const directUrl = `${origin}/api/download?${params.toString()}`;
-    const fallbackEndpoint = `${cfWorkerUrl}/?url=${encodeURIComponent(directUrl)}&filename=${encodeURIComponent(downloadFilename)}`;
-    triggerNative(fallbackEndpoint);
   };
 
   return (
